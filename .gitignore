@@ -1,0 +1,17 @@
+# do-it
+
+do-it.exe
+config.json
+
+# Build artifacts
+*.o
+*.a
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

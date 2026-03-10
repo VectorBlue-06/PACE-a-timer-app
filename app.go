@@ -10,6 +10,8 @@ type App struct {
 	UI       *UI
 
 	ShowSoundMenu bool
+	ShowSettings  bool
+	SettingsIndex int
 	ShouldExit    bool
 }
 
@@ -27,12 +29,8 @@ func NewApp() *App {
 		UI:       NewUI(),
 	}
 
-	// Set up timer completion callback
 	timer.OnComplete = func() {
 		app.Sound.Play(app.Config)
-		if app.Timer.Mode == ModePomodoro {
-			// Auto-advance handled by user pressing Space
-		}
 	}
 
 	// Default timer setup
@@ -56,19 +54,14 @@ func (app *App) InitGraphics() {
 
 // Update runs one frame of application logic.
 func (app *App) Update() {
-	dt := float32(1.0 / 60.0)
-	if fps := float32(60); fps > 0 {
-		dt = 1.0 / fps
-	}
-	// Use actual frame time for smoother animation
-	frameTime := rl_GetFrameTime()
-	if frameTime > 0 && frameTime < 0.1 {
-		dt = frameTime
+	// Use actual frame time for smooth animation
+	dt := rl_GetFrameTime()
+	if dt <= 0 || dt > 0.1 {
+		dt = 1.0 / 60.0
 	}
 
-	app.Timer.Update()
-	app.UI.Update(dt, app.Timer.Mode, app.Timer.State)
-	app.Renderer.Update(dt, app.Timer.State)
+	app.Timer.Update(dt)
+	app.UI.Update(dt, app.Timer.State, app.Config.EnableAnimations)
 
 	if HandleInput(app) {
 		app.ShouldExit = true

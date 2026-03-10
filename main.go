@@ -8,10 +8,8 @@ func rl_GetFrameTime() float32 {
 }
 
 func main() {
-	// Configure window before creation
 	rl.SetConfigFlags(rl.FlagBorderlessWindowedMode | rl.FlagMsaa4xHint | rl.FlagVsyncHint)
 
-	// Get monitor size for borderless fullscreen
 	monitor := rl.GetCurrentMonitor()
 	monW := rl.GetMonitorWidth(monitor)
 	monH := rl.GetMonitorHeight(monitor)
@@ -20,9 +18,9 @@ func main() {
 		monH = 1080
 	}
 
-	rl.InitWindow(int32(monW), int32(monH), "do-it")
+	rl.InitWindow(int32(monW), int32(monH), "PACE")
 	rl.SetTargetFPS(60)
-	rl.SetExitKey(0) // We handle ESC ourselves
+	rl.SetExitKey(0)
 
 	app := NewApp()
 	app.InitGraphics()

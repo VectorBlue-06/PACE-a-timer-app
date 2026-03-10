@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -8,95 +9,103 @@ import (
 
 // Color palette
 var (
-	ColorBG        = rl.NewColor(0, 0, 0, 255)       // #000000
-	ColorPrimary   = rl.NewColor(255, 255, 255, 255)  // #FFFFFF
-	ColorSecondary = rl.NewColor(138, 138, 138, 255)  // #8A8A8A
-	ColorSubtle    = rl.NewColor(51, 51, 51, 255)     // #333333
-	ColorAccent    = rl.NewColor(80, 200, 120, 255)   // Soft green for progress
-	ColorBreak     = rl.NewColor(100, 160, 255, 255)  // Soft blue for break
-	ColorComplete  = rl.NewColor(255, 200, 80, 255)   // Warm gold for completion
+	ColorBG        = rl.NewColor(0, 0, 0, 255)
+	ColorPrimary   = rl.NewColor(255, 255, 255, 255)
+	ColorSecondary = rl.NewColor(138, 138, 138, 255)
+	ColorSubtle    = rl.NewColor(51, 51, 51, 255)
+	ColorAccent    = rl.NewColor(80, 200, 120, 255)
+	ColorBreak     = rl.NewColor(100, 160, 255, 255)
+	ColorComplete  = rl.NewColor(255, 200, 80, 255)
 )
 
-// Renderer handles all drawing operations.
+// Renderer handles all drawing operations with correct layering.
 type Renderer struct {
-	fonts      Fonts
-	fontScale  float32
-	screenW    int32
-	screenH    int32
+	fonts     Fonts
+	fontScale float32
+	screenW   float32
+	screenH   float32
 
-	// Animation state
-	fadeAlpha    float32
-	pulsePhase  float64
-	stateAlpha  float32
-	targetAlpha float32
-	prevState   TimerState
+	// Precomputed stable digit width for "00:00" style rendering
+	digitWidth float32
+	colonWidth float32
+	refSize    float32 // font size used for precomputed widths
 }
 
 func NewRenderer(fonts Fonts, fontScale float32) *Renderer {
 	return &Renderer{
-		fonts:       fonts,
-		fontScale:   fontScale,
-		stateAlpha:  1.0,
-		targetAlpha: 1.0,
-		fadeAlpha:   0.0,
+		fonts:     fonts,
+		fontScale: fontScale,
 	}
 }
 
-// Update updates animation state each frame.
-func (r *Renderer) Update(dt float32, state TimerState) {
-	r.screenW = int32(rl.GetScreenWidth())
-	r.screenH = int32(rl.GetScreenHeight())
+// updateMetrics refreshes screen dimensions and stable digit measurements.
+func (r *Renderer) updateMetrics() {
+	r.screenW = float32(rl.GetScreenWidth())
+	r.screenH = float32(rl.GetScreenHeight())
 
-	// Fade in on startup
-	if r.fadeAlpha < 1.0 {
-		r.fadeAlpha += dt * 3.0
-		if r.fadeAlpha > 1.0 {
-			r.fadeAlpha = 1.0
+	// Precompute widest digit width for stable centering
+	fontSize := r.screenH * 0.14 * r.fontScale
+	if fontSize != r.refSize {
+		r.refSize = fontSize
+		spacing := fontSize * 0.03
+		maxW := float32(0)
+		for d := 0; d <= 9; d++ {
+			s := fmt.Sprintf("%d", d)
+			w := rl.MeasureTextEx(r.fonts.Bold, s, fontSize, spacing)
+			if w.X > maxW {
+				maxW = w.X
+			}
 		}
-	}
-
-	// State change animation
-	if state != r.prevState {
-		r.stateAlpha = 0.7
-		r.prevState = state
-	}
-	if r.stateAlpha < 1.0 {
-		r.stateAlpha += dt * 5.0
-		if r.stateAlpha > 1.0 {
-			r.stateAlpha = 1.0
-		}
-	}
-
-	// Pulsing for completed state
-	if state == StateCompleted {
-		r.pulsePhase += float64(dt) * 3.0
-	} else {
-		r.pulsePhase = 0
+		r.digitWidth = maxW
+		cw := rl.MeasureTextEx(r.fonts.Bold, ":", fontSize, spacing)
+		r.colonWidth = cw.X
 	}
 }
 
-// DrawFrame renders the complete UI frame.
+// DrawFrame renders the complete UI frame with correct layer order.
 func (r *Renderer) DrawFrame(app *App) {
-	rl.BeginDrawing()
-	rl.ClearBackground(ColorBG)
+	r.updateMetrics()
 
-	alpha := r.fadeAlpha * r.stateAlpha
-	if alpha < 0 {
-		alpha = 0
+	rl.BeginDrawing()
+
+	// Frame persistence mode: draw semi-transparent overlay instead of full clear
+	if app.Config.FramePersistence {
+		rl.DrawRectangle(0, 0, int32(r.screenW), int32(r.screenH), rl.NewColor(0, 0, 0, 25))
+	} else {
+		rl.ClearBackground(ColorBG)
 	}
 
-	r.drawLabel(app, alpha)
-	r.drawTimer(app, alpha)
-	r.drawProgressRing(app, alpha)
-	r.drawSessionInfo(app, alpha)
-	r.drawStatusHint(app, alpha)
+	alpha := app.UI.EffectiveAlpha()
+
+	// Layer 1: Progress ring (behind text)
+	if app.Config.ShowProgressRing {
+		r.drawProgressRing(app, alpha)
+	}
+
+	// Layer 2: Mode indicator (top)
 	r.drawModeIndicator(app, alpha)
+
+	// Layer 3: Label text (above timer)
+	r.drawLabel(app, alpha)
+
+	// Layer 4: Timer text (center, on top of ring)
+	r.drawTimer(app, alpha)
+
+	// Layer 5: Session and today info
+	r.drawSessionInfo(app, alpha)
+	r.drawTodayFocus(app, alpha)
+
+	// Layer 6: Keyboard hints (bottom)
+	r.drawStatusHint(app, alpha)
+
+	// Layer 7: Overlays (settings, sound selector) — always on top
 	r.drawSoundSelector(app, alpha)
+	r.drawSettingsPanel(app)
 
 	rl.EndDrawing()
 }
 
-// drawLabel draws the task name / phase label above the timer.
+// drawLabel draws the task/phase label above the timer.
 func (r *Renderer) drawLabel(app *App, alpha float32) {
 	label := app.Config.TaskName
 	if app.Timer.Mode == ModePomodoro {
@@ -106,57 +115,91 @@ func (r *Renderer) drawLabel(app *App, alpha float32) {
 		label = "Stopwatch"
 	}
 
-	fontSize := float32(r.screenH) * 0.025 * r.fontScale
+	fontSize := r.screenH * 0.025 * r.fontScale
 	spacing := fontSize * 0.05
 	size := rl.MeasureTextEx(r.fonts.Regular, label, fontSize, spacing)
 
-	posX := (float32(r.screenW) - size.X) / 2
-	posY := float32(r.screenH)*0.45 - float32(r.screenH)*0.09*r.fontScale - size.Y
+	posX := (r.screenW - size.X) / 2
+	posY := r.screenH*0.45 - r.screenH*0.10*r.fontScale - size.Y
 
 	col := ColorSecondary
 	col.A = uint8(float32(col.A) * alpha)
 	rl.DrawTextEx(r.fonts.Regular, label, rl.NewVector2(posX, posY), fontSize, spacing, col)
 }
 
-// drawTimer draws the large MM:SS display.
+// drawTimer draws the large MM:SS display with stable character-cell rendering.
+// Each digit is drawn in a fixed-width cell to prevent horizontal jitter.
 func (r *Renderer) drawTimer(app *App, alpha float32) {
-	text := app.Timer.DisplayString()
-	fontSize := float32(r.screenH) * 0.14 * r.fontScale
+	text := app.Timer.DisplayString() // "MM:SS"
+	fontSize := r.screenH * 0.14 * r.fontScale
 	spacing := fontSize * 0.03
+	scale := app.UI.TimerScale()
 
-	size := rl.MeasureTextEx(r.fonts.Bold, text, fontSize, spacing)
-	posX := (float32(r.screenW) - size.X) / 2
-	posY := float32(r.screenH)*0.45 - size.Y/2
+	// Total width: 4 digits + 1 colon, with small gap
+	gap := r.digitWidth * 0.08
+	totalW := r.digitWidth*4 + r.colonWidth + gap*4
+	scaledW := totalW * scale
+	scaledFontSize := fontSize * scale
 
-	col := ColorPrimary
-	// Pulse effect on completion
-	if app.Timer.State == StateCompleted {
-		pulse := float32(0.6 + 0.4*math.Sin(r.pulsePhase))
-		col.A = uint8(float32(col.A) * alpha * pulse)
+	startX := (r.screenW - scaledW) / 2
+	textH := rl.MeasureTextEx(r.fonts.Bold, "0", scaledFontSize, spacing)
+	posY := r.screenH*0.45 - textH.Y/2
+
+	// Determine alpha: blink + digit transition + pulse
+	visible := app.UI.TimerVisible()
+	digitA := app.Timer.DigitAlpha()
+
+	var baseAlpha float32
+	if !visible {
+		baseAlpha = 0
 	} else {
-		col.A = uint8(float32(col.A) * alpha)
+		baseAlpha = alpha * digitA
+		if app.Timer.State == StateCompleted {
+			baseAlpha *= app.UI.PulseAlpha()
+		}
 	}
 
-	rl.DrawTextEx(r.fonts.Bold, text, rl.NewVector2(posX, posY), fontSize, spacing, col)
+	col := ColorPrimary
+	col.A = uint8(float32(col.A) * baseAlpha)
+
+	// Draw each character in a fixed cell
+	x := startX
+	for i := 0; i < 5; i++ {
+		ch := string(text[i])
+		var cellW float32
+		if text[i] == ':' {
+			cellW = r.colonWidth * scale
+		} else {
+			cellW = r.digitWidth * scale
+		}
+
+		// Center character within its cell
+		charSize := rl.MeasureTextEx(r.fonts.Bold, ch, scaledFontSize, spacing)
+		charX := x + (cellW-charSize.X)/2
+
+		rl.DrawTextEx(r.fonts.Bold, ch, rl.NewVector2(charX, posY), scaledFontSize, spacing, col)
+
+		x += cellW + gap*scale
+	}
 }
 
-// drawProgressRing draws a thin circular progress indicator around the timer.
+// drawProgressRing draws a thin circular progress indicator behind the timer.
 func (r *Renderer) drawProgressRing(app *App, alpha float32) {
 	if app.Timer.Mode == ModeStopwatch {
 		return
 	}
 
 	progress := float32(app.Timer.Progress())
-	cx := float32(r.screenW) / 2
-	cy := float32(r.screenH) * 0.45
-	radius := float32(r.screenH) * 0.16 * r.fontScale
+	cx := r.screenW / 2
+	cy := r.screenH * 0.45
+	radius := r.screenH * 0.18 * r.fontScale
 
 	// Background ring
 	bgCol := ColorSubtle
-	bgCol.A = uint8(float32(bgCol.A) * alpha * 0.5)
-	drawArc(cx, cy, radius, 0, 360, 3.0, bgCol)
+	bgCol.A = uint8(float32(bgCol.A) * alpha * 0.4)
+	drawArc(cx, cy, radius, 0, 360, 2.5, bgCol)
 
-	// Progress ring
+	// Progress ring color
 	var ringCol rl.Color
 	switch {
 	case app.Timer.State == StateCompleted:
@@ -166,23 +209,21 @@ func (r *Renderer) drawProgressRing(app *App, alpha float32) {
 	default:
 		ringCol = ColorAccent
 	}
-	ringCol.A = uint8(float32(ringCol.A) * alpha)
+	ringCol.A = uint8(float32(ringCol.A) * alpha * 0.9)
 
-	// Draw from top (270°), clockwise
 	endAngle := progress * 360.0
 	if endAngle > 0.5 {
-		drawArc(cx, cy, radius, -90, -90+endAngle, 3.0, ringCol)
+		drawArc(cx, cy, radius, -90, -90+endAngle, 2.5, ringCol)
 	}
 }
 
-// drawArc draws a smooth arc using line segments.
 func drawArc(cx, cy, radius, startAngle, endAngle, thickness float32, color rl.Color) {
-	segments := int(math.Abs(float64(endAngle-startAngle)) / 2.0)
-	if segments < 16 {
-		segments = 16
+	segments := int(math.Abs(float64(endAngle-startAngle)) / 1.5)
+	if segments < 24 {
+		segments = 24
 	}
-	if segments > 180 {
-		segments = 180
+	if segments > 240 {
+		segments = 240
 	}
 
 	step := (endAngle - startAngle) / float32(segments)
@@ -199,65 +240,76 @@ func drawArc(cx, cy, radius, startAngle, endAngle, thickness float32, color rl.C
 	}
 }
 
-// drawSessionInfo draws session and today's focus stats at the bottom.
+// drawSessionInfo draws session info in the upper portion below mode indicator.
 func (r *Renderer) drawSessionInfo(app *App, alpha float32) {
 	if app.Timer.Mode != ModePomodoro {
 		return
 	}
 
-	fontSize := float32(r.screenH) * 0.018 * r.fontScale
+	fontSize := r.screenH * 0.016 * r.fontScale
 	spacing := fontSize * 0.03
 
-	// Session info
 	sessionText := app.Pomodoro.SessionLabel()
 	size := rl.MeasureTextEx(r.fonts.Regular, sessionText, fontSize, spacing)
-	posX := (float32(r.screenW) - size.X) / 2
-	posY := float32(r.screenH) * 0.72
+	posX := (r.screenW - size.X) / 2
+	posY := r.screenH * 0.06
 
 	col := ColorSubtle
-	col.A = uint8(float32(col.A) * alpha)
+	col.A = uint8(float32(col.A) * alpha * 0.8)
 	rl.DrawTextEx(r.fonts.Regular, sessionText, rl.NewVector2(posX, posY), fontSize, spacing, col)
+}
 
-	// Today's focus
+// drawTodayFocus draws total focus time in the lower area.
+func (r *Renderer) drawTodayFocus(app *App, alpha float32) {
+	if app.Timer.Mode != ModePomodoro {
+		return
+	}
+
+	fontSize := r.screenH * 0.016 * r.fontScale
+	spacing := fontSize * 0.03
+
 	todayText := app.Pomodoro.TodayLabel()
-	size = rl.MeasureTextEx(r.fonts.Regular, todayText, fontSize, spacing)
-	posX = (float32(r.screenW) - size.X) / 2
-	posY += fontSize * 1.8
+	size := rl.MeasureTextEx(r.fonts.Regular, todayText, fontSize, spacing)
+	posX := (r.screenW - size.X) / 2
+	posY := r.screenH * 0.85
 
+	col := ColorSubtle
+	col.A = uint8(float32(col.A) * alpha * 0.6)
 	rl.DrawTextEx(r.fonts.Regular, todayText, rl.NewVector2(posX, posY), fontSize, spacing, col)
 }
 
-// drawStatusHint draws a subtle keyboard hint at the bottom of the screen.
+// drawStatusHint draws contextual keyboard hints at the bottom.
 func (r *Renderer) drawStatusHint(app *App, alpha float32) {
+	keys := app.Config.Keys
 	var hint string
 	switch app.Timer.State {
 	case StateIdle:
-		hint = "SPACE to start  ·  R reset  ·  1/2/3 presets  ·  P pomodoro  ·  W stopwatch  ·  S sound  ·  ESC quit"
+		hint = fmt.Sprintf("%s start  ·  %s reset  ·  %s settings  ·  %s quit",
+			keys.StartPause.Name, keys.Reset.Name, keys.SettingsToggle.Name, keys.Quit.Name)
 	case StateRunning:
-		hint = "SPACE to pause  ·  R reset  ·  ESC quit"
+		hint = fmt.Sprintf("%s pause  ·  %s reset  ·  %s quit",
+			keys.StartPause.Name, keys.Reset.Name, keys.Quit.Name)
 	case StatePaused:
-		hint = "SPACE to resume  ·  R reset  ·  ESC quit"
+		hint = fmt.Sprintf("%s resume  ·  %s reset  ·  %s quit",
+			keys.StartPause.Name, keys.Reset.Name, keys.Quit.Name)
 	case StateCompleted:
-		if app.Timer.Mode == ModePomodoro {
-			hint = "SPACE for next  ·  R reset  ·  ESC quit"
-		} else {
-			hint = "SPACE to restart  ·  R reset  ·  ESC quit"
-		}
+		hint = fmt.Sprintf("%s continue  ·  %s reset  ·  %s quit",
+			keys.StartPause.Name, keys.Reset.Name, keys.Quit.Name)
 	}
 
-	fontSize := float32(r.screenH) * 0.014 * r.fontScale
+	fontSize := r.screenH * 0.013 * r.fontScale
 	spacing := fontSize * 0.02
 	size := rl.MeasureTextEx(r.fonts.Regular, hint, fontSize, spacing)
 
-	posX := (float32(r.screenW) - size.X) / 2
-	posY := float32(r.screenH) * 0.94
+	posX := (r.screenW - size.X) / 2
+	posY := r.screenH * 0.94
 
 	col := ColorSubtle
-	col.A = uint8(float32(50) * alpha)
+	col.A = uint8(float32(40) * alpha)
 	rl.DrawTextEx(r.fonts.Regular, hint, rl.NewVector2(posX, posY), fontSize, spacing, col)
 }
 
-// drawModeIndicator draws a subtle mode label at the top.
+// drawModeIndicator draws a subtle mode label at the very top.
 func (r *Renderer) drawModeIndicator(app *App, alpha float32) {
 	var mode string
 	switch app.Timer.Mode {
@@ -269,15 +321,15 @@ func (r *Renderer) drawModeIndicator(app *App, alpha float32) {
 		mode = "STOPWATCH"
 	}
 
-	fontSize := float32(r.screenH) * 0.013 * r.fontScale
+	fontSize := r.screenH * 0.012 * r.fontScale
 	spacing := fontSize * 0.15
 	size := rl.MeasureTextEx(r.fonts.SemiBold, mode, fontSize, spacing)
 
-	posX := (float32(r.screenW) - size.X) / 2
-	posY := float32(r.screenH) * 0.04
+	posX := (r.screenW - size.X) / 2
+	posY := r.screenH * 0.03
 
 	col := ColorSubtle
-	col.A = uint8(float32(40) * alpha)
+	col.A = uint8(float32(35) * alpha)
 	rl.DrawTextEx(r.fonts.SemiBold, mode, rl.NewVector2(posX, posY), fontSize, spacing, col)
 }
 
@@ -287,64 +339,138 @@ func (r *Renderer) drawSoundSelector(app *App, alpha float32) {
 		return
 	}
 
-	// Semi-transparent overlay
-	rl.DrawRectangle(0, 0, r.screenW, r.screenH, rl.NewColor(0, 0, 0, 200))
+	rl.DrawRectangle(0, 0, int32(r.screenW), int32(r.screenH), rl.NewColor(0, 0, 0, 200))
 
-	titleSize := float32(r.screenH) * 0.03 * r.fontScale
-	itemSize := float32(r.screenH) * 0.022 * r.fontScale
+	titleSize := r.screenH * 0.03 * r.fontScale
+	itemSize := r.screenH * 0.022 * r.fontScale
 	spacing := titleSize * 0.03
 
-	// Title
 	title := "Select Sound"
 	tSize := rl.MeasureTextEx(r.fonts.SemiBold, title, titleSize, spacing)
-	posX := (float32(r.screenW) - tSize.X) / 2
-	posY := float32(r.screenH) * 0.35
+	posX := (r.screenW - tSize.X) / 2
+	posY := r.screenH * 0.35
 
 	col := ColorPrimary
 	col.A = uint8(float32(col.A) * alpha)
 	rl.DrawTextEx(r.fonts.SemiBold, title, rl.NewVector2(posX, posY), titleSize, spacing, col)
 
-	// Options
 	sounds := []struct {
-		key  string
-		name string
+		key, name, id string
 	}{
-		{"1", "Bell"},
-		{"2", "Chime"},
-		{"3", "None"},
+		{"1", "Bell", "bell"},
+		{"2", "Chime", "chime"},
+		{"3", "None", "none"},
 	}
 
 	for i, s := range sounds {
 		text := s.key + "  " + s.name
 		iSize := rl.MeasureTextEx(r.fonts.Regular, text, itemSize, spacing)
-		ix := (float32(r.screenW) - iSize.X) / 2
+		ix := (r.screenW - iSize.X) / 2
 		iy := posY + tSize.Y + float32(i+1)*itemSize*2.0
 
 		itemCol := ColorSecondary
-		// Highlight current selection
-		current := ""
-		switch i {
-		case 0:
-			current = "bell"
-		case 1:
-			current = "chime"
-		case 2:
-			current = "none"
-		}
-		if app.Config.SoundFile == current {
+		if app.Config.SoundFile == s.id {
 			itemCol = ColorPrimary
 		}
 		itemCol.A = uint8(float32(itemCol.A) * alpha)
 		rl.DrawTextEx(r.fonts.Regular, text, rl.NewVector2(ix, iy), itemSize, spacing, itemCol)
 	}
 
-	// Hint
 	hint := "Press 1-3 to select  ·  S or ESC to close"
-	hSize := rl.MeasureTextEx(r.fonts.Regular, hint, float32(r.screenH)*0.015*r.fontScale, spacing)
-	hx := (float32(r.screenW) - hSize.X) / 2
-	hy := float32(r.screenH) * 0.65
+	hintSize := r.screenH * 0.015 * r.fontScale
+	hSize := rl.MeasureTextEx(r.fonts.Regular, hint, hintSize, spacing)
+	hx := (r.screenW - hSize.X) / 2
+	hy := r.screenH * 0.65
 
 	hCol := ColorSubtle
-	hCol.A = uint8(float32(60) * alpha)
-	rl.DrawTextEx(r.fonts.Regular, hint, rl.NewVector2(hx, hy), float32(r.screenH)*0.015*r.fontScale, spacing, hCol)
+	hCol.A = uint8(float32(55) * alpha)
+	rl.DrawTextEx(r.fonts.Regular, hint, rl.NewVector2(hx, hy), hintSize, spacing, hCol)
+}
+
+// drawSettingsPanel draws the settings overlay with fade animation.
+func (r *Renderer) drawSettingsPanel(app *App) {
+	if !app.UI.SettingsVisible() {
+		return
+	}
+
+	sa := app.UI.SettingsAlpha()
+
+	// Dimmed background
+	rl.DrawRectangle(0, 0, int32(r.screenW), int32(r.screenH),
+		rl.NewColor(0, 0, 0, uint8(220*sa)))
+
+	titleSize := r.screenH * 0.035 * r.fontScale
+	labelSize := r.screenH * 0.018 * r.fontScale
+	valueSize := r.screenH * 0.018 * r.fontScale
+	spacing := labelSize * 0.03
+
+	// Title
+	title := "Settings"
+	tSize := rl.MeasureTextEx(r.fonts.SemiBold, title, titleSize, spacing)
+	tx := (r.screenW - tSize.X) / 2
+	ty := r.screenH * 0.15
+
+	titleCol := ColorPrimary
+	titleCol.A = uint8(float32(titleCol.A) * sa)
+	rl.DrawTextEx(r.fonts.SemiBold, title, rl.NewVector2(tx, ty), titleSize, spacing, titleCol)
+
+	// Settings items
+	type settingsItem struct {
+		label string
+		value string
+	}
+
+	items := []settingsItem{
+		{"Focus Duration", fmt.Sprintf("%d min", app.Config.FocusDuration)},
+		{"Short Break", fmt.Sprintf("%d min", app.Config.ShortBreak)},
+		{"Long Break", fmt.Sprintf("%d min", app.Config.LongBreak)},
+		{"Sessions", fmt.Sprintf("%d", app.Config.SessionsBeforeLong)},
+		{"Sound", app.Config.SoundFile},
+		{"Volume", fmt.Sprintf("%.0f%%", app.Config.Volume*100)},
+		{"Font Scale", fmt.Sprintf("%.1fx", app.Config.FontScale)},
+		{"Progress Ring", boolLabel(app.Config.ShowProgressRing)},
+		{"Animations", boolLabel(app.Config.EnableAnimations)},
+		{"Frame Persistence", boolLabel(app.Config.FramePersistence)},
+	}
+
+	startY := ty + tSize.Y + r.screenH*0.04
+	rowH := labelSize * 2.4
+	colLabel := r.screenW*0.35
+	colValue := r.screenW*0.55
+	selIdx := app.SettingsIndex
+
+	for i, item := range items {
+		y := startY + float32(i)*rowH
+
+		// Highlight selected row
+		labelCol := ColorSecondary
+		valCol := ColorPrimary
+		if i == selIdx {
+			labelCol = ColorPrimary
+			valCol = ColorAccent
+		}
+		labelCol.A = uint8(float32(labelCol.A) * sa)
+		valCol.A = uint8(float32(valCol.A) * sa)
+
+		rl.DrawTextEx(r.fonts.Regular, item.label, rl.NewVector2(colLabel, y), labelSize, spacing, labelCol)
+		rl.DrawTextEx(r.fonts.SemiBold, item.value, rl.NewVector2(colValue, y), valueSize, spacing, valCol)
+	}
+
+	// Navigation hint
+	hint := "↑↓ navigate  ·  ←→ adjust  ·  TAB close"
+	hintSize := r.screenH * 0.013 * r.fontScale
+	hSize := rl.MeasureTextEx(r.fonts.Regular, hint, hintSize, spacing)
+	hx := (r.screenW - hSize.X) / 2
+	hy := r.screenH * 0.88
+
+	hCol := ColorSubtle
+	hCol.A = uint8(float32(50) * sa)
+	rl.DrawTextEx(r.fonts.Regular, hint, rl.NewVector2(hx, hy), hintSize, spacing, hCol)
+}
+
+func boolLabel(b bool) string {
+	if b {
+		return "On"
+	}
+	return "Off"
 }

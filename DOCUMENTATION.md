@@ -1,8 +1,8 @@
-# do-it — Technical Documentation
+# PACE — Technical Documentation
 
 ## Overview
 
-**do-it** is a minimal fullscreen productivity timer built with Go and Raylib. It compiles to a single static Windows executable (~5 MB) with no runtime dependencies. All assets — fonts and sounds — are embedded directly in the binary.
+**PACE** is a minimal fullscreen productivity timer built with Go and Raylib. It compiles to a single static Windows executable (~5 MB) with no runtime dependencies. All assets — fonts and sounds — are embedded directly in the binary.
 
 The design philosophy prioritizes calm, focused aesthetics: pure black background, crisp white Inter typography, and smooth GPU-accelerated rendering at 60 FPS.
 
@@ -13,36 +13,126 @@ The design philosophy prioritizes calm, focused aesthetics: pure black backgroun
 ### Module Layout
 
 | File | Responsibility |
-|----------------|-----------------------------------------------|
+|----------------|--------------------------------------------------|
 | `main.go` | Window initialization, render loop |
 | `app.go` | Central state machine, lifecycle management |
-| `timer.go` | System-clock-based time tracking |
+| `timer.go` | System-clock-based time tracking, digit transitions |
 | `pomodoro.go` | Pomodoro cycle logic (focus/break/long break) |
-| `renderer.go` | All OpenGL drawing via Raylib |
-| `input.go` | Keyboard event routing |
+| `renderer.go` | Layered OpenGL drawing via Raylib |
+| `input.go` | Configurable keyboard event routing |
 | `sound.go` | Procedural WAV generation, audio playback |
 | `fonts.go` | Embedded TTF loading via `//go:embed` |
-| `ui.go` | Transient animation state |
-| `config.go` | JSON configuration load/save |
+| `ui.go` | Animation state machine (blink, scale, fade) |
+| `config.go` | JSON configuration with key bindings |
 
 ### Data Flow
 
 ```
 main.go
   └─ creates App
-       ├─ Timer      (system time based)
+       ├─ Timer      (system time based, tracks digit transitions)
        ├─ Pomodoro   (cycle state machine)
-       ├─ Renderer   (draws everything)
+       ├─ Renderer   (layered drawing)
        ├─ SoundSystem (generates and plays sounds)
-       └─ UI         (animation state)
+       └─ UI         (animation state: blink, scale, fade, settings)
 
 Per frame:
-  1. Timer.Update()     — read system clock
-  2. UI.Update()        — advance animations
-  3. Renderer.Update()  — update fade/pulse state
-  4. HandleInput()      — process keyboard
-  5. Renderer.DrawFrame() — render everything
+  1. Timer.Update(dt)     — read system clock, advance digit fade
+  2. UI.Update(dt, ...)   — advance blink, scale, fade, settings animations
+  3. HandleInput()        — process keyboard with configurable bindings
+  4. Renderer.DrawFrame() — render all layers in correct order
 ```
+
+---
+
+## Rendering System
+
+### Layer Order
+
+The renderer draws in strict order to prevent the progress ring from overlapping text:
+
+1. **Background** — Full clear or frame persistence fade
+2. **Progress ring** — Thin circular arc behind everything
+3. **Mode indicator** — Subtle label at top
+4. **Label text** — Task name / phase above timer
+5. **Timer text** — Large MM:SS digits, centered
+6. **Session info** — Session count and today's focus
+7. **Keyboard hints** — Subtle hints at bottom
+8. **Overlays** — Settings panel, sound selector (always on top)
+
+### Stable Text Rendering
+
+Timer digits are rendered in **fixed-width character cells** to prevent horizontal jitter when values change (e.g., "25:00" → "24:59").
+
+Implementation:
+1. At startup, measure the widest digit (0–9) in the Bold font
+2. Each digit is drawn centered within a cell of that maximum width
+3. The colon has its own fixed cell width
+4. Total width = 4 × digitWidth + 1 × colonWidth + gaps
+5. The entire block is centered on screen
+
+This ensures the timer appears visually locked to the center regardless of which digits are displayed.
+
+### Frame Persistence Mode
+
+An optional rendering mode where the screen is not fully cleared each frame. Instead, a semi-transparent black rectangle is drawn over the previous frame:
+
+```go
+rl.DrawRectangle(0, 0, screenW, screenH, Color(0, 0, 0, 25))
+```
+
+This creates soft motion trails for a dreamlike visual effect. Toggled via Ctrl+Space or the settings panel.
+
+---
+
+## Animation System
+
+All animations use real time deltas from `time.Now()`, not frame counting.
+
+### Timer Scale
+
+When the timer starts running, it smoothly scales from 1.0× to 1.05× over ~200ms, creating subtle emphasis. When paused, it returns to 1.0×.
+
+### Blink Patterns
+
+| State | Visible | Invisible | Cycle |
+|-----------|---------|-----------|-------|
+| Paused | 1.0s | 1.0s | 2.0s |
+| Completed | 0.5s | 0.5s | 1.0s |
+
+Blink is computed via `math.Mod(elapsed, cycle)` using wall-clock time, making it frame-rate independent.
+
+### Digit Transitions
+
+When the displayed MM:SS string changes, the new digits fade in over ~120ms (alpha 0 → 1). This is tracked per-frame in `timer.go` using a `digitAlpha` field.
+
+### State Change Fade
+
+When the timer changes state (idle → running, running → paused, etc.), a brief opacity dip to 70% occurs, recovering to 100% over ~200ms.
+
+### Startup Fade
+
+The entire UI fades in from black over ~333ms on application launch.
+
+### Completion Pulse
+
+When the timer reaches zero, a continuous sinusoidal pulse modulates the timer text alpha between 60% and 100%.
+
+### Settings Panel
+
+The settings overlay fades in/out over ~180ms with a smooth alpha transition.
+
+### Animation Timing Summary
+
+| Animation | Duration |
+|---------------------|----------|
+| Timer scale | ~200ms |
+| Digit fade | ~120ms |
+| State change fade | ~200ms |
+| Startup fade-in | ~333ms |
+| Settings panel fade | ~180ms |
+| Pause blink cycle | 2.0s |
+| Complete blink cycle | 1.0s |
 
 ---
 
@@ -50,27 +140,13 @@ Per frame:
 
 ### Clock Independence
 
-The timer does **not** count frames. It uses `time.Now()` and `time.Since()` from Go's standard library, which provides nanosecond-resolution wall-clock time on Windows.
+The timer uses `time.Now()` and `time.Since()` for nanosecond-resolution wall-clock timing. It never counts frames.
 
 ```
 Start:  startTime = time.Now()
 Update: elapsed = time.Since(startTime)
-Pause:  pausedAt = elapsed; save startTime offset
+Pause:  pausedAt = elapsed
 Resume: startTime = time.Now() - pausedAt
-```
-
-This ensures the timer remains accurate regardless of frame drops, system load, or vsync behavior.
-
-### Display Format
-
-The timer displays `MM:SS` with zero-padded digits. The display string is computed without `fmt.Sprintf` for zero allocations:
-
-```go
-buf := [5]byte{
-    byte('0' + m/10), byte('0' + m%10),
-    ':',
-    byte('0' + s/10), byte('0' + s%10),
-}
 ```
 
 ### Timer Modes
@@ -78,7 +154,7 @@ buf := [5]byte{
 | Mode | Behavior |
 |-----------|----------------------------------------------|
 | Countdown | Counts down from a set duration |
-| Pomodoro | Countdown with automatic phase transitions |
+| Pomodoro | Countdown with phase-based cycle management |
 | Stopwatch | Counts up indefinitely |
 
 ---
@@ -92,8 +168,6 @@ buf := [5]byte{
 [Focus 25m] → [Short Break 5m] → [Focus 25m] → [Long Break 20m] → repeat
 ```
 
-The default is 4 focus sessions before a long break. All durations are configurable via `config.json`.
-
 ### State Machine
 
 ```
@@ -103,80 +177,110 @@ PhaseShortBreak ──complete──► PhaseFocus (session++)
 PhaseLongBreak  ──complete──► PhaseFocus (session = 1)
 ```
 
-Transitions are triggered by the user pressing Space after timer completion (not automatic), giving the user control over when to start the next phase.
-
-### Session Tracking
-
-The pomodoro system tracks:
-- Current session number (1-based)
-- Total completed focus sessions today
-- Total focus minutes today
-
-This information is displayed subtly at the bottom of the screen in Pomodoro mode.
+Transitions are user-initiated (press Space after completion).
 
 ---
 
-## Rendering System
+## Input System
 
-### Font Rendering
+### Configurable Key Bindings
 
-Fonts are loaded at high resolution (200px base size × font scale) and scaled down for display. This produces crisp text at any screen resolution.
+All keyboard shortcuts are stored in `config.json` under the `keys` object. Each binding specifies:
 
-The Inter typeface is used in three weights:
-- **Inter-Bold** — Timer digits (large, centered)
-- **Inter-SemiBold** — Mode indicators (subtle, top of screen)
-- **Inter-Regular** — Labels, hints, session info
+- `key` — Raylib key code (int32)
+- `ctrl` — Whether Ctrl must be held (boolean)
+- `name` — Display name shown in UI hints
 
-Font files are embedded at compile time using Go's `//go:embed` directive and loaded from memory via `rl.LoadFontFromMemory`. No font files needed at runtime.
+### Default Bindings
 
-### Typography Scale
+| Action | Key | Code |
+|---------------------|-------------|------|
+| Start / Pause | Space | 32 |
+| Reset | R | 82 |
+| Fullscreen | F | 70 |
+| Settings | Tab | 258 |
+| Frame Persistence | Ctrl+Space | 32 |
+| Pomodoro Mode | P | 80 |
+| Stopwatch Mode | W | 87 |
+| Sound Selector | S | 83 |
+| Preset 25m | 1 | 49 |
+| Preset 50m | 2 | 50 |
+| Preset Break | 3 | 51 |
+| Quit | Escape | 256 |
 
-All font sizes are proportional to screen height:
+### Input Priority
 
-| Element | Size | Weight |
-|----------------|----------------------|----------|
-| Timer digits | 14% of screen height | Bold |
-| Task label | 2.5% of screen height| Regular |
-| Session info | 1.8% of screen height| Regular |
-| Keyboard hints | 1.4% of screen height| Regular |
-| Mode indicator | 1.3% of screen height| SemiBold |
+1. Settings panel (when open) captures all input
+2. Sound selector (when open) captures all input
+3. Normal input routing
 
-### Color System
+### Settings Panel Controls
+
+When the settings panel is open:
+- **↑↓** navigate between options
+- **←→** adjust the selected value
+- **TAB** or **ESC** closes the panel
+
+---
+
+## Settings Panel
+
+Pressing TAB opens a full-screen settings overlay with these options:
+
+| Setting | Adjustable | Step |
+|---------------------|------------|------|
+| Focus Duration | 1–120 min | ±5 |
+| Short Break | 1–30 min | ±1 |
+| Long Break | 1–60 min | ±5 |
+| Sessions | 1–10 | ±1 |
+| Sound | bell/chime/none | cycle |
+| Volume | 0–100% | ±10% |
+| Font Scale | 0.5–3.0x | ±0.1 |
+| Progress Ring | On/Off | toggle |
+| Animations | On/Off | toggle |
+| Frame Persistence | On/Off | toggle |
+
+Changes are saved to `config.json` immediately.
+
+---
+
+## Color System
 
 | Name | Hex | Usage |
 |-----------|---------|-------------------------------|
 | Background| #000000 | Screen background |
-| Primary | #FFFFFF | Timer digits |
+| Primary | #FFFFFF | Timer digits, active labels |
 | Secondary | #8A8A8A | Labels, session info |
 | Subtle | #333333 | Hints, ring background |
 | Accent | #50C878 | Progress ring (focus) |
 | Break | #64A0FF | Progress ring (break) |
 | Complete | #FFC850 | Progress ring (completed) |
 
-### Progress Ring
+---
 
-A thin circular progress ring (3px) surrounds the timer display. It animates smoothly as time progresses, drawn from the top (12 o'clock position) clockwise.
+## Typography
 
-The ring changes color based on state:
-- **Green** — Focus session active
-- **Blue** — Break period
-- **Gold** — Timer completed
+### Font Weights
 
-The ring is rendered as line segments along an arc, producing smooth curves at any resolution.
+| Weight | Usage |
+|------------|-------------------------------------|
+| Inter-Bold | Timer digits |
+| Inter-SemiBold | Mode indicator, settings titles |
+| Inter-Regular | Labels, hints, session info |
 
-### Animations
+### Sizing (relative to screen height)
 
-| Animation | Duration | Trigger |
-|--------------------|----------|-------------------------|
-| Startup fade-in | ~333ms | Application launch |
-| State change fade | ~200ms | Start/pause/complete |
-| Completion pulse | Continuous| Timer reaches zero |
+| Element | Size |
+|----------------|------|
+| Timer digits | 14% |
+| Task label | 2.5% |
+| Session info | 1.6% |
+| Keyboard hints | 1.3% |
+| Mode indicator | 1.2% |
 
-All animations use actual frame time (`GetFrameTime()`) rather than fixed increments, ensuring consistent behavior regardless of frame rate.
+### Positioning
 
-### Vertical Positioning
-
-The timer sits at **45%** of screen height (slightly above center), following macOS-style layout conventions where primary content sits above the optical center. This creates a calm, balanced visual composition.
+The timer sits at **45%** of screen height (slightly above vertical center), following macOS-style layout conventions.
 
 ---
 
@@ -184,74 +288,32 @@ The timer sits at **45%** of screen height (slightly above center), following ma
 
 ### Procedural Generation
 
-Sounds are generated mathematically at runtime — no WAV files are embedded. This keeps the binary small.
+Sounds are generated mathematically at runtime — no WAV files are shipped.
 
-#### Bell Sound
-Multi-harmonic sine wave with exponential decay:
-```
-f₁ = 880 Hz  (amplitude 0.6)
-f₂ = 1320 Hz (amplitude 0.3)
-f₃ = 1760 Hz (amplitude 0.1)
-envelope = e^(-3t)
-duration = 1.5 seconds
-```
+**Bell:** Multi-harmonic sine wave (880/1320/1760 Hz) with exponential decay, 1.5s duration.
 
-#### Chime Sound
-Two-tone sequence with overlapping decay:
-```
-Tone 1: 523 Hz (C5) + 785 Hz harmonic, starts at t=0
-Tone 2: 659 Hz (E5) + 988 Hz harmonic, starts at t=0.3s
-envelope = e^(-2.5t) per tone
-duration = 1.8 seconds
-```
+**Chime:** Two-tone sequence (C5 at 523 Hz, E5 at 659 Hz) with overlapping decay, 1.8s duration.
 
 ### Audio Pipeline
 
-1. WAV data is generated in memory as `[]byte`
-2. Written to a temporary file (OS temp directory)
-3. Loaded by Raylib's audio system
+1. WAV data generated in memory
+2. Written to OS temp directory
+3. Loaded by Raylib audio system
 4. Temp file immediately deleted
-
-This is necessary because Raylib's `LoadSound` requires a file path. The temp files exist only momentarily during initialization.
-
-### Sound Options
-
-| Sound | Description |
-|-------|--------------------------|
-| bell | Warm multi-harmonic bell |
-| chime | Two-tone ascending chime |
-| none | Silent |
-
-Sound selection is accessible via the `S` key overlay menu, and persisted to `config.json`.
 
 ---
 
-## Input System
+## Progress Ring
 
-### Keyboard-First Design
+A thin (2.5px) circular progress ring drawn behind the timer text at 18% of screen height radius.
 
-All interaction is keyboard-driven. There is no mouse cursor, no buttons, no click targets. This reduces visual noise and keeps the interface focused.
+| State | Color |
+|-----------|---------|
+| Focus | #50C878 |
+| Break | #64A0FF |
+| Completed | #FFC850 |
 
-### Input Routing
-
-The sound selection overlay captures input when visible, preventing timer controls from firing while choosing sounds. ESC is handled globally for application exit.
-
-### Key Bindings
-
-```
-Space     Toggle timer (start/pause/resume/advance)
-R         Reset timer to initial state
-F         Toggle borderless fullscreen
-P         Switch to Pomodoro mode
-W         Switch to Stopwatch mode
-S         Open/close sound selector
-1         Set 25-minute countdown (when idle)
-2         Set 50-minute countdown (when idle)
-3         Set 5-minute break countdown (when idle)
-ESC       Exit application
-```
-
-Number keys (1/2/3) only work when the timer is idle or paused, and not in Pomodoro mode (where the cycle manages durations automatically).
+The ring animates smoothly from 12 o'clock clockwise. A background ring at 40% opacity provides visual context.
 
 ---
 
@@ -259,36 +321,31 @@ Number keys (1/2/3) only work when the timer is idle or paused, and not in Pomod
 
 ### File Location
 
-`config.json` is created next to the executable on first run. If the file is missing or malformed, defaults are used.
+`config.json` is created next to the executable on first run.
 
-### Options
+### Full Schema
 
-| Field | Type | Default | Description |
-|----------------------------|---------|---------|-------------------------------|
-| `focus_duration_minutes` | int | 25 | Pomodoro focus session length |
-| `short_break_minutes` | int | 5 | Short break length |
-| `long_break_minutes` | int | 20 | Long break length |
-| `sessions_before_long_break`| int | 4 | Sessions before long break |
-| `default_timer_minutes` | int | 25 | Default countdown on startup |
-| `sound` | string | "bell" | "bell", "chime", or "none" |
-| `font_scale` | float | 1.0 | Global font size multiplier |
-| `task_name` | string | "Deep Work"| Label shown above timer |
-| `volume` | float | 0.4 | Sound volume (0.0 – 1.0) |
-
-### Validation
-
-Values are clamped to safe ranges:
-- `font_scale`: 0.5 – 3.0
-- `volume`: 0.0 – 1.0
-- All durations: minimum 1 minute
+| Field | Type | Default | Range |
+|----------------------------|---------|---------|-------------|
+| `focus_duration_minutes` | int | 25 | 1–120 |
+| `short_break_minutes` | int | 5 | 1–30 |
+| `long_break_minutes` | int | 20 | 1–60 |
+| `sessions_before_long_break`| int | 4 | 1–10 |
+| `default_timer_minutes` | int | 25 | 0+ |
+| `sound` | string | "bell" | bell/chime/none |
+| `font_scale` | float | 1.0 | 0.5–3.0 |
+| `task_name` | string | "Deep Work" | — |
+| `volume` | float | 0.4 | 0.0–1.0 |
+| `show_progress_ring` | bool | true | — |
+| `enable_animations` | bool | true | — |
+| `frame_persistence` | bool | false | — |
+| `keys` | object | (defaults) | — |
 
 ---
 
 ## Build System
 
 ### Static Compilation
-
-The build uses CGO to compile Raylib's C source code directly into the Go binary:
 
 ```
 CGO_ENABLED=1 → raylib C source compiled via GCC
@@ -297,18 +354,12 @@ CGO_ENABLED=1 → raylib C source compiled via GCC
 -extldflags '-static' → static linking (no DLL dependencies)
 ```
 
-### Dependencies at Build Time
+### Dependencies
 
-| Tool | Version | Purpose |
-|--------|---------|------------------------------|
-| Go | 1.21+ | Compiler and build system |
-| GCC | MinGW-w64 | C compiler for CGO (raylib) |
+**Build time:** Go 1.21+, GCC (MinGW-w64)
+**Runtime:** None
 
-### Dependencies at Runtime
-
-**None.** The executable is fully self-contained.
-
-### Build Output
+### Output
 
 | Metric | Value |
 |--------|-------|
@@ -320,8 +371,6 @@ CGO_ENABLED=1 → raylib C source compiled via GCC
 
 ## Performance
 
-### Design Targets
-
 | Metric | Target |
 |------------|----------------|
 | Frame rate | 60 FPS (vsync) |
@@ -329,39 +378,9 @@ CGO_ENABLED=1 → raylib C source compiled via GCC
 | Memory | < 30 MB |
 | Startup | < 200ms |
 
-### Rendering Efficiency
-
 - VSync enabled (no busy-loop rendering)
 - MSAA 4x for smooth lines
-- Bilinear texture filtering for crisp font rendering
+- Bilinear texture filtering for crisp fonts
 - No dynamic allocations in the render loop
-- Timer string computed without `fmt.Sprintf`
-
-### Font Loading
-
-Fonts are loaded once at startup at high resolution. The GPU handles downscaling via bilinear filtering, ensuring crisp text at any display size without runtime resampling.
-
----
-
-## Design Decisions
-
-### Why Raylib?
-
-- Direct OpenGL access for smooth rendering
-- Minimal dependency footprint
-- Compiles from source via CGO (no shared libraries)
-- Built-in font rendering with TTF support
-- Built-in audio with WAV support
-- Well-maintained, stable API
-
-### Why Embedded Assets?
-
-Embedding fonts via `//go:embed` and generating sounds procedurally means the entire application is a single file. No installer, no asset folder, no PATH configuration. Copy the exe anywhere and run it.
-
-### Why System Time?
-
-Frame-counting timers drift. A 60 FPS timer loses ~1 second every 10 minutes due to frame timing variance. Using `time.Now()` provides nanosecond accuracy from the OS clock, independent of rendering performance.
-
-### Why Borderless Fullscreen?
-
-Borderless fullscreen provides the immersive, distraction-free experience without the display mode switching delay of true fullscreen. The window covers the entire screen but can be alt-tabbed smoothly.
+- Timer string computed without fmt.Sprintf
+- All animations use real time deltas

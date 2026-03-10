@@ -11,7 +11,6 @@ type TimerMode int
 const (
 	ModeCountdown TimerMode = iota
 	ModePomodoro
-	ModeStopwatch
 )
 
 // TimerState represents the current state of the timer.
@@ -34,9 +33,8 @@ type Timer struct {
 	startTime time.Time
 	pausedAt  time.Duration
 
-	// Digit transition tracking
-	prevDisplay string
-	digitAlpha  float32 // 0..1, fades in new digits over ~120ms
+	// Digit transition: always 1.0 for instant swap (no blink)
+	digitAlpha float32
 
 	OnComplete func()
 }
@@ -87,7 +85,6 @@ func (t *Timer) Reset() {
 	t.State = StateIdle
 	t.Elapsed = 0
 	t.pausedAt = 0
-	t.prevDisplay = ""
 	t.digitAlpha = 1.0
 }
 
@@ -95,7 +92,7 @@ func (t *Timer) Reset() {
 func (t *Timer) Update(dt float32) {
 	if t.State == StateRunning {
 		t.Elapsed = time.Since(t.startTime)
-		if t.Mode != ModeStopwatch && t.Elapsed >= t.Duration {
+		if t.Elapsed >= t.Duration {
 			t.Elapsed = t.Duration
 			t.State = StateCompleted
 			if t.OnComplete != nil {
@@ -104,26 +101,11 @@ func (t *Timer) Update(dt float32) {
 		}
 	}
 
-	// Digit transition animation
-	current := t.DisplayString()
-	if t.prevDisplay != "" && current != t.prevDisplay {
-		t.digitAlpha = 0.0
-	}
-	t.prevDisplay = current
-
-	if t.digitAlpha < 1.0 {
-		// ~120ms fade: 1.0 / 0.120 ≈ 8.33 per second
-		t.digitAlpha += dt * 8.33
-		if t.digitAlpha > 1.0 {
-			t.digitAlpha = 1.0
-		}
-	}
+	// Keep digit alpha at 1.0 — instant swap, no blink
+	t.digitAlpha = 1.0
 }
 
 func (t *Timer) Remaining() time.Duration {
-	if t.Mode == ModeStopwatch {
-		return t.Elapsed
-	}
 	rem := t.Duration - t.Elapsed
 	if rem < 0 {
 		return 0
@@ -132,7 +114,7 @@ func (t *Timer) Remaining() time.Duration {
 }
 
 func (t *Timer) Progress() float64 {
-	if t.Duration == 0 || t.Mode == ModeStopwatch {
+	if t.Duration == 0 {
 		return 0
 	}
 	return math.Min(float64(t.Elapsed)/float64(t.Duration), 1.0)
@@ -140,17 +122,11 @@ func (t *Timer) Progress() float64 {
 
 func (t *Timer) DisplayMinutes() int {
 	d := t.Remaining()
-	if t.Mode == ModeStopwatch {
-		d = t.Elapsed
-	}
 	return int(d.Minutes()) % 60
 }
 
 func (t *Timer) DisplaySeconds() int {
 	d := t.Remaining()
-	if t.Mode == ModeStopwatch {
-		d = t.Elapsed
-	}
 	return int(d.Seconds()) % 60
 }
 

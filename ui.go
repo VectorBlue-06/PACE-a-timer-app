@@ -34,6 +34,10 @@ type UI struct {
 	// Breathing animation
 	breathPhase float64
 
+	// Sound popup (alarm name display)
+	soundPopupText  string
+	soundPopupTimer float32
+
 	// Wall clock for time-based blink
 	lastUpdate time.Time
 
@@ -118,6 +122,14 @@ func (u *UI) Update(dt float32, state TimerState, enableAnim bool) {
 	if math.Abs(float64(diff)) < 0.01 {
 		u.settingsAlpha = u.settingsAlphaTarget
 	}
+
+	// Sound popup countdown
+	if u.soundPopupTimer > 0 {
+		u.soundPopupTimer -= realDt
+		if u.soundPopupTimer < 0 {
+			u.soundPopupTimer = 0
+		}
+	}
 }
 
 func (u *UI) updateBlink(state TimerState, dt float32) {
@@ -186,4 +198,29 @@ func (u *UI) SettingsAlpha() float32 {
 // SettingsFullyOpen returns true if settings is fully visible.
 func (u *UI) SettingsFullyOpen() bool {
 	return u.settingsAlphaTarget > 0.5 && u.settingsAlpha > 0.95
+}
+
+// TriggerSoundPopup starts the sound name popup display (4s total).
+func (u *UI) TriggerSoundPopup(text string) {
+	u.soundPopupText = text
+	u.soundPopupTimer = 4.0
+}
+
+// SoundPopupAlpha returns the popup opacity (fade in 0.5s, hold, fade out 0.7s).
+func (u *UI) SoundPopupAlpha() float32 {
+	if u.soundPopupTimer <= 0 {
+		return 0
+	}
+	if u.soundPopupTimer > 3.5 {
+		return (4.0 - u.soundPopupTimer) * 2.0
+	}
+	if u.soundPopupTimer < 0.7 {
+		return u.soundPopupTimer / 0.7
+	}
+	return 1.0
+}
+
+// SoundPopupText returns the current popup text.
+func (u *UI) SoundPopupText() string {
+	return u.soundPopupText
 }

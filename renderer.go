@@ -11,7 +11,7 @@ import (
 var (
 	ColorBG        = rl.NewColor(0, 0, 0, 255)
 	ColorPrimary   = rl.NewColor(255, 255, 255, 255)
-	ColorSecondary = rl.NewColor(138, 138, 138, 255)
+	ColorSecondary = rl.NewColor(170, 170, 170, 255)
 	ColorSubtle    = rl.NewColor(51, 51, 51, 255)
 	ColorAccent    = rl.NewColor(80, 200, 120, 255)
 	ColorBreak     = rl.NewColor(100, 160, 255, 255)
@@ -29,6 +29,11 @@ type Renderer struct {
 	digitWidth float32
 	colonWidth float32
 	refSize    float32 // font size used for precomputed widths
+
+	// Cached hint string to avoid per-frame formatting
+	cachedHint      string
+	cachedHintState TimerState
+	cachedHintMode  TimerMode
 }
 
 func NewRenderer(fonts Fonts, fontScale float32) *Renderer {
@@ -68,11 +73,12 @@ func (r *Renderer) DrawFrame(app *App) {
 
 	rl.BeginDrawing()
 
-	// Frame persistence mode: draw semi-transparent overlay instead of full clear
-	if app.Config.FramePersistence {
-		rl.DrawRectangle(0, 0, int32(r.screenW), int32(r.screenH), rl.NewColor(0, 0, 0, 25))
+	// Frame persistence mode: very subtle overlay (opacity ~0.05)
+	if app.Config.FramePersistence && !app.ForceClear {
+		rl.DrawRectangle(0, 0, int32(r.screenW), int32(r.screenH), rl.NewColor(0, 0, 0, 13))
 	} else {
 		rl.ClearBackground(ColorBG)
+		app.ForceClear = false
 	}
 
 	alpha := app.UI.EffectiveAlpha()
@@ -95,10 +101,13 @@ func (r *Renderer) DrawFrame(app *App) {
 	r.drawSessionInfo(app, alpha)
 	r.drawTodayFocus(app, alpha)
 
-	// Layer 6: Keyboard hints (bottom)
+	// Layer 6: Sound name popup
+	r.drawSoundPopup(app, alpha)
+
+	// Layer 7: Keyboard hints (bottom)
 	r.drawStatusHint(app, alpha)
 
-	// Layer 7: Overlays (settings, sound selector) — always on top
+	// Layer 8: Overlays (settings, sound selector) — always on top
 	r.drawSoundSelector(app, alpha)
 	r.drawSettingsPanel(app)
 
@@ -110,9 +119,6 @@ func (r *Renderer) drawLabel(app *App, alpha float32) {
 	label := app.Config.TaskName
 	if app.Timer.Mode == ModePomodoro {
 		label = app.Pomodoro.PhaseLabel()
-	}
-	if app.Timer.Mode == ModeStopwatch {
-		label = "Stopwatch"
 	}
 
 	fontSize := r.screenH * 0.025 * r.fontScale
@@ -185,10 +191,6 @@ func (r *Renderer) drawTimer(app *App, alpha float32) {
 
 // drawProgressRing draws a thin circular progress indicator behind the timer.
 func (r *Renderer) drawProgressRing(app *App, alpha float32) {
-	if app.Timer.Mode == ModeStopwatch {
-		return
-	}
-
 	progress := float32(app.Timer.Progress())
 	cx := r.screenW / 2
 	cy := r.screenH * 0.45
@@ -278,24 +280,53 @@ func (r *Renderer) drawTodayFocus(app *App, alpha float32) {
 	rl.DrawTextEx(r.fonts.Regular, todayText, rl.NewVector2(posX, posY), fontSize, spacing, col)
 }
 
+// drawSoundPopup shows the alarm sound name in the bottom-right corner.
+func (r *Renderer) drawSoundPopup(app *App, alpha float32) {
+	popupAlpha := app.UI.SoundPopupAlpha()
+	if popupAlpha <= 0 {
+		return
+	}
+
+	text := app.UI.SoundPopupText()
+	if text == "" {
+		return
+	}
+
+	fontSize := r.screenH * 0.014 * r.fontScale
+	spacing := fontSize * 0.03
+	size := rl.MeasureTextEx(r.fonts.Regular, text, fontSize, spacing)
+
+	posX := r.screenW - size.X - r.screenW*0.03
+	posY := r.screenH * 0.92
+
+	col := ColorSecondary
+	col.A = uint8(float32(col.A) * alpha * popupAlpha * 0.7)
+	rl.DrawTextEx(r.fonts.Regular, text, rl.NewVector2(posX, posY), fontSize, spacing, col)
+}
+
 // drawStatusHint draws contextual keyboard hints at the bottom.
 func (r *Renderer) drawStatusHint(app *App, alpha float32) {
-	keys := app.Config.Keys
-	var hint string
-	switch app.Timer.State {
-	case StateIdle:
-		hint = fmt.Sprintf("%s start  ·  %s reset  ·  %s settings  ·  %s quit",
-			keys.StartPause.Name, keys.Reset.Name, keys.SettingsToggle.Name, keys.Quit.Name)
-	case StateRunning:
-		hint = fmt.Sprintf("%s pause  ·  %s reset  ·  %s quit",
-			keys.StartPause.Name, keys.Reset.Name, keys.Quit.Name)
-	case StatePaused:
-		hint = fmt.Sprintf("%s resume  ·  %s reset  ·  %s quit",
-			keys.StartPause.Name, keys.Reset.Name, keys.Quit.Name)
-	case StateCompleted:
-		hint = fmt.Sprintf("%s continue  ·  %s reset  ·  %s quit",
-			keys.StartPause.Name, keys.Reset.Name, keys.Quit.Name)
+	state := app.Timer.State
+	mode := app.Timer.Mode
+
+	// Cache hint string — only rebuild when state or mode changes
+	if r.cachedHint == "" || state != r.cachedHintState || mode != r.cachedHintMode {
+		r.cachedHintState = state
+		r.cachedHintMode = mode
+		keys := app.Config.Keys
+		switch state {
+		case StateIdle:
+			r.cachedHint = keys.StartPause.Name + " start  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.SettingsToggle.Name + " settings  \u00b7  " + keys.Quit.Name + " quit"
+		case StateRunning:
+			r.cachedHint = keys.StartPause.Name + " pause  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.Quit.Name + " quit"
+		case StatePaused:
+			r.cachedHint = keys.StartPause.Name + " resume  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.Quit.Name + " quit"
+		case StateCompleted:
+			r.cachedHint = keys.StartPause.Name + " continue  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.Quit.Name + " quit"
+		}
 	}
+
+	hint := r.cachedHint
 
 	fontSize := r.screenH * 0.013 * r.fontScale
 	spacing := fontSize * 0.02
@@ -317,8 +348,6 @@ func (r *Renderer) drawModeIndicator(app *App, alpha float32) {
 		mode = "COUNTDOWN"
 	case ModePomodoro:
 		mode = "POMODORO"
-	case ModeStopwatch:
-		mode = "STOPWATCH"
 	}
 
 	fontSize := r.screenH * 0.012 * r.fontScale
@@ -420,17 +449,26 @@ func (r *Renderer) drawSettingsPanel(app *App) {
 		value string
 	}
 
+	alarmName := "Not set"
+	if app.Config.AlarmSoundPath != "" {
+		alarmName = AlarmDisplayName(app.Config)
+		if alarmName == "" {
+			alarmName = "Not set"
+		}
+	}
+
 	items := []settingsItem{
 		{"Focus Duration", fmt.Sprintf("%d min", app.Config.FocusDuration)},
 		{"Short Break", fmt.Sprintf("%d min", app.Config.ShortBreak)},
 		{"Long Break", fmt.Sprintf("%d min", app.Config.LongBreak)},
 		{"Sessions", fmt.Sprintf("%d", app.Config.SessionsBeforeLong)},
-		{"Sound", app.Config.SoundFile},
+		{"Alarm Sound", app.Config.SoundFile},
 		{"Volume", fmt.Sprintf("%.0f%%", app.Config.Volume*100)},
 		{"Font Scale", fmt.Sprintf("%.1fx", app.Config.FontScale)},
 		{"Progress Ring", boolLabel(app.Config.ShowProgressRing)},
 		{"Animations", boolLabel(app.Config.EnableAnimations)},
 		{"Frame Persistence", boolLabel(app.Config.FramePersistence)},
+		{"Custom Alarm File", alarmName},
 	}
 
 	startY := ty + tSize.Y + r.screenH*0.04
@@ -457,7 +495,7 @@ func (r *Renderer) drawSettingsPanel(app *App) {
 	}
 
 	// Navigation hint
-	hint := "↑↓ navigate  ·  ←→ adjust  ·  TAB close"
+	hint := "↑↓ navigate  ·  ←→ adjust  ·  ENTER browse  ·  TAB close"
 	hintSize := r.screenH * 0.013 * r.fontScale
 	hSize := rl.MeasureTextEx(r.fonts.Regular, hint, hintSize, spacing)
 	hx := (r.screenW - hSize.X) / 2

@@ -12,6 +12,7 @@ type App struct {
 	ShowSoundMenu bool
 	ShowSettings  bool
 	SettingsIndex int
+	ForceClear    bool
 	ShouldExit    bool
 }
 
@@ -30,17 +31,19 @@ func NewApp() *App {
 	}
 
 	timer.OnComplete = func() {
-		app.Sound.Play(app.Config)
+		app.Sound.PlayAlarm(app.Config)
+		name := AlarmDisplayName(app.Config)
+		if name != "" {
+			app.UI.TriggerSoundPopup(name)
+		}
 	}
 
 	// Default timer setup
-	switch cfg.DefaultTimer {
-	case 0:
-		timer.Mode = ModeStopwatch
-	default:
-		timer.Mode = ModeCountdown
-		timer.SetDuration(cfg.DefaultTimer)
+	if cfg.DefaultTimer <= 0 {
+		cfg.DefaultTimer = 25
 	}
+	timer.Mode = ModeCountdown
+	timer.SetDuration(cfg.DefaultTimer)
 
 	return app
 }
@@ -49,7 +52,7 @@ func NewApp() *App {
 func (app *App) InitGraphics() {
 	fonts := LoadFonts(app.Config.FontScale)
 	app.Renderer = NewRenderer(fonts, app.Config.FontScale)
-	app.Sound.Init()
+	app.Sound.Init(app.Config)
 }
 
 // Update runs one frame of application logic.

@@ -27,6 +27,7 @@ type AppConfig struct {
 	ShowProgressRing   bool    `json:"show_progress_ring"`
 	EnableAnimations   bool    `json:"enable_animations"`
 	FramePersistence   bool    `json:"frame_persistence"`
+	AlarmSoundPath     string  `json:"alarm_sound_path,omitempty"`
 
 	// Configurable key bindings (stored as raylib key codes)
 	Keys KeyBindings `json:"keys"`
@@ -40,7 +41,6 @@ type KeyBindings struct {
 	SettingsToggle   KeyBinding `json:"settings_toggle"`
 	FadeToggle       KeyBinding `json:"fade_toggle"`
 	PomodoroMode     KeyBinding `json:"pomodoro_mode"`
-	StopwatchMode    KeyBinding `json:"stopwatch_mode"`
 	SoundMenu        KeyBinding `json:"sound_menu"`
 	Preset25         KeyBinding `json:"preset_25"`
 	Preset50         KeyBinding `json:"preset_50"`
@@ -55,7 +55,6 @@ const (
 	keyF      int32 = 70
 	keyTab    int32 = 258
 	keyP      int32 = 80
-	keyW      int32 = 87
 	keyS      int32 = 83
 	keyOne    int32 = 49
 	keyTwo    int32 = 50
@@ -71,7 +70,6 @@ func defaultKeyBindings() KeyBindings {
 		SettingsToggle:   KeyBinding{Key: keyTab, Name: "TAB"},
 		FadeToggle:       KeyBinding{Key: keySpace, Ctrl: true, Name: "CTRL+SPACE"},
 		PomodoroMode:     KeyBinding{Key: keyP, Name: "P"},
-		StopwatchMode:    KeyBinding{Key: keyW, Name: "W"},
 		SoundMenu:        KeyBinding{Key: keyS, Name: "S"},
 		Preset25:         KeyBinding{Key: keyOne, Name: "1"},
 		Preset50:         KeyBinding{Key: keyTwo, Name: "2"},

@@ -19,6 +19,7 @@ func main() {
 	}
 
 	rl.InitWindow(int32(monW), int32(monH), "PACE")
+	rl.SetWindowPosition(0, 0)
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(0)
 

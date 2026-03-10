@@ -20,11 +20,10 @@ PACE is built around one idea: **remove everything that isn't the timer.**
 
 When you launch PACE, the screen goes black and a single set of digits appears. There is no title bar, no menu, no toolbar. You press Space to start and the timer counts down. When it finishes, a soft bell plays. That's it.
 
-The app supports three workflows:
+The app supports two workflows:
 
 - **Countdown** — Set a fixed duration (25m, 50m, or custom) and focus until it hits zero.
 - **Pomodoro** — Automatically cycle through focus and break intervals with session tracking.
-- **Stopwatch** — Count up indefinitely for open-ended work sessions.
 
 All settings are adjustable in real-time through an in-app settings panel (TAB), so you never leave the timer.
 
@@ -51,7 +50,6 @@ This means the timer remains accurate regardless of frame rate drops or system l
 |-----------|-------------------------------------------------|
 | Countdown | Counts down from a set duration to zero          |
 | Pomodoro  | Countdown with automatic phase-based cycling     |
-| Stopwatch | Counts up indefinitely from zero                 |
 
 ### Pomodoro Cycle
 
@@ -130,7 +128,6 @@ Font sizes scale relative to screen height (e.g., timer digits at 14% of height)
 | TAB           | Open / close settings panel     |
 | Ctrl+Space    | Toggle frame persistence mode   |
 | P             | Pomodoro mode                   |
-| W             | Stopwatch mode                  |
 | S             | Sound selector                  |
 | 1             | Set 25 minute countdown         |
 | 2             | Set 50 minute countdown         |
@@ -143,6 +140,7 @@ Font sizes scale relative to screen height (e.g., timer digits at 14% of height)
 |-------|-------------------|
 | ↑ ↓   | Navigate options  |
 | ← →   | Adjust values     |
+| ENTER | Browse alarm file |
 | TAB   | Close panel       |
 | ESC   | Close panel       |
 
@@ -171,13 +169,14 @@ A `config.json` file is auto-created next to the executable on first run. All va
 | `long_break_minutes`         | int     | 20          | 1–60          |
 | `sessions_before_long_break` | int     | 4           | 1–10          |
 | `default_timer_minutes`      | int     | 25          | 0+            |
-| `sound`                      | string  | "bell"      | bell/chime/none |
+| `sound`                      | string  | "bell"      | bell/chime/custom/none |
 | `font_scale`                 | float   | 1.0         | 0.5–3.0       |
 | `task_name`                  | string  | "Deep Work" | —             |
 | `volume`                     | float   | 0.4         | 0.0–1.0       |
 | `show_progress_ring`         | bool    | true        | —             |
 | `enable_animations`          | bool    | true        | —             |
 | `frame_persistence`          | bool    | false       | —             |
+| `alarm_sound_path`           | string  | ""          | file path     |
 | `keys`                       | object  | (defaults)  | —             |
 
 ### Key Binding Format
@@ -204,12 +203,13 @@ Each entry in the `keys` object follows this structure:
 | Short Break      | ±1 min  | 1–30 min    |
 | Long Break       | ±5 min  | 1–60 min    |
 | Sessions         | ±1      | 1–10        |
-| Sound            | cycle   | bell/chime/none |
+| Sound            | cycle   | bell/chime/custom/none |
 | Volume           | ±10%    | 0–100%      |
 | Font Scale       | ±0.1    | 0.5–3.0x    |
 | Progress Ring    | toggle  | On/Off      |
 | Animations       | toggle  | On/Off      |
 | Frame Persistence| toggle  | On/Off      |
+| Custom Alarm File| browse  | file picker |
 
 ---
 
@@ -222,7 +222,7 @@ Each entry in the `keys` object follows this structure:
 | Language    | Go                              |
 | Renderer    | Raylib 5.5 (via raylib-go)      |
 | Fonts       | Inter v4.1 (embedded TTF)       |
-| Audio       | Procedural WAV generation       |
+| Audio       | Embedded WAV + custom file loading |
 | Build       | CGO with static linking         |
 | Config      | JSON (auto-created at runtime)  |
 
@@ -236,10 +236,11 @@ Each entry in the `keys` object follows this structure:
 | `pomodoro.go`  | Pomodoro cycle logic                        |
 | `renderer.go`  | Layered OpenGL drawing via Raylib           |
 | `input.go`     | Configurable keyboard event routing         |
-| `sound.go`     | Procedural WAV generation, playback         |
+| `sound.go`     | Embedded sound loading, playback        |
 | `fonts.go`     | Embedded TTF loading via `//go:embed`       |
 | `ui.go`        | Animation state machine                     |
 | `config.go`    | JSON config with key bindings               |
+| `dialog_windows.go` | Windows file picker for alarm sound    |
 
 ### Data Flow
 
@@ -275,12 +276,30 @@ All animations use real time deltas, not frame counting.
 
 ### Sound System
 
-Sounds are generated mathematically at runtime — no audio files are shipped.
+All sounds are embedded in the binary via `//go:embed` from `assets/sounds/`.
+
+#### Alarm Sounds (configurable)
 
 - **Bell** — Multi-harmonic sine wave (880/1320/1760 Hz) with exponential decay, 1.5s
 - **Chime** — Two-tone sequence (C5 at 523 Hz, E5 at 659 Hz) with overlapping decay, 1.8s
+- **Custom** — User-selected WAV or MP3 file from disk
 
-Audio pipeline: WAV data generated in memory → written to temp directory → loaded by Raylib → temp file deleted.
+#### UI Feedback Sounds (always active)
+
+- **Start** — Quick ascending sweep (600–900 Hz), 100ms
+- **Pause** — Soft low tone (400 Hz), 80ms
+- **Resume** — Ascending sweep (550–800 Hz), 100ms
+- **Reset** — Short tick (300 Hz), 60ms
+
+UI sounds play at a fixed low volume (15%) and are not user-configurable.
+
+#### Custom Alarm
+
+Users can load an external WAV or MP3 file via the settings panel (item 10: "Custom Alarm File"). When selected, the file path is saved in `config.json` under `alarm_sound_path`. The sound is loaded directly from disk at startup.
+
+When the alarm plays, a small label appears in the bottom-right showing the sound name (filename without extension), fading out over 4 seconds.
+
+Audio pipeline: Embedded WAV data → written to temp → loaded by Raylib → temp file deleted.
 
 ### Static Compilation
 
@@ -311,10 +330,18 @@ do-it/
 │   │   ├── Inter-Regular.ttf
 │   │   ├── Inter-SemiBold.ttf
 │   │   └── Inter-Bold.ttf
+│   ├── sounds/
+│   │   ├── bell.wav
+│   │   ├── chime.wav
+│   │   ├── start.wav
+│   │   ├── pause.wav
+│   │   ├── resume.wav
+│   │   └── reset.wav
 │   ├── PACE-banner.png
 │   └── PACE-logo.png
-├── docs/
-│   └── DOCUMENTATION.md
+├── cmd/
+│   └── gensounds/
+│       └── main.go
 ├── main.go
 ├── app.go
 ├── timer.go
@@ -325,12 +352,14 @@ do-it/
 ├── fonts.go
 ├── ui.go
 ├── config.go
+├── dialog_windows.go
 ├── build.ps1
 ├── build.bat
 ├── config.json
 ├── go.mod
 ├── go.sum
 ├── .gitignore
+├── DOCUMENTATION.md
 └── README.md
 ```
 

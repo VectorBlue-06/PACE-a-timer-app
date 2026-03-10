@@ -40,14 +40,25 @@ func HandleInput(app *App) bool {
 		if app.Timer.State == StateCompleted && app.Timer.Mode == ModePomodoro {
 			app.Pomodoro.Advance()
 			app.Timer.Start()
+			app.Sound.PlayStart()
 		} else {
+			prevState := app.Timer.State
 			app.Timer.Toggle()
+			switch prevState {
+			case StateIdle:
+				app.Sound.PlayStart()
+			case StateRunning:
+				app.Sound.PlayPause()
+			case StatePaused:
+				app.Sound.PlayResume()
+			}
 		}
 	}
 
 	// Reset
 	if isKeyPressed(keys.Reset) {
 		app.Timer.Reset()
+		app.Sound.PlayReset()
 		if app.Timer.Mode == ModePomodoro {
 			app.Pomodoro.Phase = PhaseFocus
 			app.Pomodoro.CurrentSession = 1
@@ -58,6 +69,7 @@ func HandleInput(app *App) bool {
 	// Fullscreen
 	if isKeyPressed(keys.FullscreenToggle) {
 		rl.ToggleBorderlessWindowed()
+		app.ForceClear = true
 	}
 
 	// Pomodoro mode
@@ -66,12 +78,6 @@ func HandleInput(app *App) bool {
 		app.Timer.Reset()
 		app.Pomodoro = NewPomodoro(app.Config, app.Timer)
 		app.Pomodoro.Setup()
-	}
-
-	// Stopwatch mode
-	if isKeyPressed(keys.StopwatchMode) {
-		app.Timer.Mode = ModeStopwatch
-		app.Timer.Reset()
 	}
 
 	// Sound selector
@@ -124,8 +130,8 @@ func handleSoundMenu(app *App) bool {
 	return false
 }
 
-// Settings panel navigation: 10 items
-const settingsItemCount = 10
+// Settings panel navigation: 11 items
+const settingsItemCount = 11
 
 func handleSettingsInput(app *App) bool {
 	// Close settings
@@ -147,6 +153,18 @@ func handleSettingsInput(app *App) bool {
 		if app.SettingsIndex >= settingsItemCount {
 			app.SettingsIndex = 0
 		}
+	}
+
+	// Enter key for browsing alarm file (item 10)
+	if rl.IsKeyPressed(rl.KeyEnter) && app.SettingsIndex == 10 {
+		path := OpenFileDialog()
+		if path != "" {
+			app.Config.AlarmSoundPath = path
+			app.Config.SoundFile = "custom"
+			app.Sound.LoadCustomAlarm(path)
+			SaveConfig(app.Config)
+		}
+		return false
 	}
 
 	// Adjust values
@@ -195,8 +213,11 @@ func handleSettingsInput(app *App) bool {
 		if cfg.SessionsBeforeLong > 10 {
 			cfg.SessionsBeforeLong = 10
 		}
-	case 4: // Sound
+	case 4: // Alarm Sound
 		sounds := []string{"bell", "chime", "none"}
+		if cfg.AlarmSoundPath != "" {
+			sounds = append(sounds, "custom")
+		}
 		idx := 0
 		for i, s := range sounds {
 			if s == cfg.SoundFile {
@@ -235,6 +256,21 @@ func handleSettingsInput(app *App) bool {
 		cfg.EnableAnimations = !cfg.EnableAnimations
 	case 9: // Frame Persistence
 		cfg.FramePersistence = !cfg.FramePersistence
+	case 10: // Custom Alarm File — Right opens dialog, Left clears
+		if right {
+			path := OpenFileDialog()
+			if path != "" {
+				cfg.AlarmSoundPath = path
+				cfg.SoundFile = "custom"
+				app.Sound.LoadCustomAlarm(path)
+			}
+		} else {
+			cfg.AlarmSoundPath = ""
+			if cfg.SoundFile == "custom" {
+				cfg.SoundFile = "bell"
+			}
+			app.Sound.LoadCustomAlarm("")
+		}
 	}
 
 	SaveConfig(*cfg)

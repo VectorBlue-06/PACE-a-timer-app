@@ -22,12 +22,14 @@
 
 - **Single executable** — ~5 MB static binary, no DLLs, no runtime dependencies
 - **Fullscreen by default** — Borderless window that fills the screen
-- **Three timer modes** — Countdown, Pomodoro, and Stopwatch
+- **Two timer modes** — Countdown and Pomodoro
 - **Pomodoro cycle** — Configurable focus/break/long break with session tracking
-- **Smooth animations** — Scale, fade, blink, and digit transitions at 60 FPS
+- **UI feedback sounds** — Subtle start, pause, resume, and reset audio cues
+- **Custom alarm sound** — Load your own WAV/MP3 for the timer completion alert
+- **Smooth animations** — Scale, fade, and blink at 60 FPS
 - **Settings panel** — In-app overlay (TAB) to adjust all options live
 - **Configurable keys** — Every shortcut is remappable via `config.json`
-- **Procedural audio** — Bell and chime sounds generated at runtime, no audio files shipped
+- **Embedded sounds** — Bell, chime, and UI sounds compiled into the binary
 - **Embedded fonts** — Inter typeface (Regular, SemiBold, Bold) compiled into the binary
 - **Frame persistence** — Optional motion-trail rendering mode (Ctrl+Space)
 - **Progress ring** — Thin circular arc that tracks elapsed time
@@ -75,7 +77,6 @@ Run `pace.exe`. The timer launches in fullscreen.
 | TAB           | Open / close settings panel     |
 | Ctrl+Space    | Toggle frame persistence mode   |
 | P             | Pomodoro mode                   |
-| W             | Stopwatch mode                  |
 | S             | Sound selector                  |
 | 1             | 25 minute timer                 |
 | 2             | 50 minute timer                 |
@@ -88,6 +89,7 @@ Run `pace.exe`. The timer launches in fullscreen.
 |-------|-------------------|
 | ↑ ↓   | Navigate options  |
 | ← →   | Adjust values     |
+| ENTER | Browse alarm file |
 | TAB   | Close settings    |
 
 ---
@@ -104,6 +106,7 @@ Run `pace.exe`. The timer launches in fullscreen.
 do-it/
 ├── assets/
 │   ├── fonts/              # Inter TTF files (embedded at compile time)
+│   ├── sounds/             # WAV sound files (embedded at compile time)
 │   ├── PACE-banner.png
 │   └── PACE-logo.png
 ├── main.go                 # Window init and render loop
@@ -112,10 +115,11 @@ do-it/
 ├── pomodoro.go             # Pomodoro cycle state machine
 ├── renderer.go             # Layered rendering via Raylib
 ├── input.go                # Configurable keyboard event routing
-├── sound.go                # Procedural WAV generation and playback
+├── sound.go                # Embedded sound loading and playback
 ├── fonts.go                # Embedded TTF loading via go:embed
 ├── ui.go                   # Animation engine (blink, scale, fade)
 ├── config.go               # JSON configuration with key bindings
+├── dialog_windows.go       # Windows file picker for custom alarm
 ├── build.ps1               # PowerShell build script
 ├── build.bat               # Command Prompt build script
 ├── config.json             # Auto-generated user config

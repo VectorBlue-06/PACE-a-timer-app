@@ -127,7 +127,7 @@ do-it/
 
 ## Documentation
 
-See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for the full technical reference — architecture, rendering pipeline, animation system, configuration schema, and more.
+See [docs/DOCUMENTATION.md](DOCUMENTATION.md) for the full technical reference — architecture, rendering pipeline, animation system, configuration schema, and more.
 
 ---
 

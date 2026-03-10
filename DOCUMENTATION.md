@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../assets/PACE-logo.png" alt="PACE logo" width="120">
+  <img src="assets/PACE-logo.png" alt="PACE logo" width="120">
 </p>
 
 <h1 align="center">PACE — Documentation</h1>

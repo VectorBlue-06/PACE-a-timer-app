@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-windows-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-Windows-blue" alt="Platform">
   <img src="https://img.shields.io/badge/language-Go-00ADD8" alt="Go">
   <img src="https://img.shields.io/badge/renderer-Raylib%205.5-red" alt="Raylib">
   <img src="https://img.shields.io/badge/binary-~5MB-green" alt="Size">
@@ -18,22 +18,33 @@
 
 ---
 
+**Download for Windows:** [Releases](https://github.com/VectorBlue-06/PACE-a-timer-app/releases)
+
+> Currently only Windows is supported. macOS and Linux coming soon!
+
+---
+
 ## Features
 
-- **Single executable** — ~5 MB static binary, no DLLs, no runtime dependencies
-- **Fullscreen by default** — Borderless window that fills the screen
-- **Two timer modes** — Countdown and Pomodoro
-- **Pomodoro cycle** — Configurable focus/break/long break with session tracking
-- **UI feedback sounds** — Subtle start, pause, resume, and reset audio cues
-- **Custom alarm sound** — Load your own WAV/MP3 for the timer completion alert
-- **Smooth animations** — Scale, fade, and blink at 60 FPS
-- **Settings panel** — In-app overlay (TAB) to adjust all options live
-- **Configurable keys** — Every shortcut is remappable via `config.json`
-- **Embedded sounds** — Bell, chime, and UI sounds compiled into the binary
-- **Embedded fonts** — Inter typeface (Regular, SemiBold, Bold) compiled into the binary
-- **Frame persistence** — Optional motion-trail rendering mode (Ctrl+Space)
-- **Progress ring** — Thin circular arc that tracks elapsed time
-- **Auto-saved config** — Settings persist across sessions via JSON
+- **Single executable** — ~5 MB, no dependencies
+- **Fullscreen** — Borderless window for deep focus
+- **Two modes** — Countdown timer and Pomodoro
+- **Customizable** — Remap keys and load your own alarm sound
+- **Smooth UI** — 60 FPS animations and settings panel
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="./assets/screenshots/home1.png" width="45%" alt="Home screen - Timer running">
+  <img src="./assets/screenshots/home2.png" width="45%" alt="Home screen - Timer stopped">
+</p>
+
+<p align="center">
+  <img src="./assets/screenshots/pomodoro-stop.png" width="45%" alt="Pomodoro mode - Timer stopped">
+  <img src="./assets/screenshots/setting.png" width="45%" alt="Settings panel">
+</p>
 
 ---
 
@@ -63,9 +74,22 @@ go build -ldflags "-s -w -H windowsgui -extldflags '-static'" -o pace.exe .
 
 ---
 
+## How to Use
+
+1. Download and run `pace.exe`
+2. Press **Space** to start the timer
+3. Press **1**, **2**, or **3** to switch between presets (25 min, 50 min, 5 min break)
+4. Press **P** for Pomodoro mode (focus → break → focus cycle)
+5. Press **TAB** to open settings and customize durations, sounds, and keybinds
+6. Press **F** to toggle fullscreen, **ESC** to exit
+
+> NOTE - Controls may change in future for the ease of use.
+
+---
+
 ## Usage
 
-Run `pace.exe`. The timer launches in fullscreen.
+Run `PACE.exe`. The timer launches in fullscreen.
 
 ### Keyboard Shortcuts
 
@@ -91,20 +115,6 @@ Run `pace.exe`. The timer launches in fullscreen.
 | ← →   | Adjust values     |
 | ENTER | Browse alarm file |
 | TAB   | Close settings    |
-
----
-
-## Screenshots
-
-<p align="center">
-  <img src="./assets/screenshots/home1.png" width="45%" alt="Home screen - Timer running">
-  <img src="./assets/screenshots/home2.png" width="45%" alt="Home screen - Timer stopped">
-</p>
-
-<p align="center">
-  <img src="./assets/screenshots/pomodoro-stop.png" width="45%" alt="Pomodoro mode - Timer stopped">
-  <img src="./assets/screenshots/setting.png" width="45%" alt="Settings panel">
-</p>
 
 ---
 

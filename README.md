@@ -96,7 +96,15 @@ Run `pace.exe`. The timer launches in fullscreen.
 
 ## Screenshots
 
-> _Screenshots coming soon._
+<p align="center">
+  <img src="./assets/screenshots/home1.png" width="45%" alt="Home screen - Timer running">
+  <img src="./assets/screenshots/home2.png" width="45%" alt="Home screen - Timer stopped">
+</p>
+
+<p align="center">
+  <img src="./assets/screenshots/pomodoro-stop.png" width="45%" alt="Pomodoro mode - Timer stopped">
+  <img src="./assets/screenshots/setting.png" width="45%" alt="Settings panel">
+</p>
 
 ---
 

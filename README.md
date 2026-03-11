@@ -16,13 +16,7 @@
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Dependencies">
 </p>
 
----
 
-**Download for Windows:** [Releases](https://github.com/VectorBlue-06/PACE-a-timer-app/releases)
-
-> Currently only Windows is supported. macOS and Linux coming soon!
-
----
 
 ## Features
 
@@ -46,7 +40,21 @@
   <img src="./assets/screenshots/setting.png" width="45%" alt="Settings panel">
 </p>
 
+
+
 ---
+
+**Download for Windows:** [Releases](https://github.com/VectorBlue-06/PACE-a-timer-app/releases)
+
+> Currently only Windows is supported. macOS and Linux coming soon!
+
+---
+
+
+---
+
+
+
 
 ## Installation
 

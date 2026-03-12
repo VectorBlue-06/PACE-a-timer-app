@@ -1,5 +1,9 @@
 package main
 
+import rl "github.com/gen2brain/raylib-go/raylib"
+
+const quitHoldDurationSeconds = 1.0
+
 // App holds the complete application state.
 type App struct {
 	Config   AppConfig
@@ -14,6 +18,8 @@ type App struct {
 	SettingsIndex int
 	ForceClear    bool
 	ShouldExit    bool
+	QuitHoldTime  float32
+	QuitPromptA   float32
 }
 
 // NewApp creates and initializes the full application.
@@ -39,11 +45,8 @@ func NewApp() *App {
 	}
 
 	// Default timer setup
-	if cfg.DefaultTimer <= 0 {
-		cfg.DefaultTimer = 25
-	}
-	timer.Mode = ModeCountdown
-	timer.SetDuration(cfg.DefaultTimer)
+	timer.Mode = ModePomodoro
+	pomo.Setup()
 
 	return app
 }
@@ -66,10 +69,36 @@ func (app *App) Update() {
 	app.Timer.Update(dt)
 	app.UI.Update(dt, app.Timer.State, app.Config.EnableAnimations)
 	app.Sound.UpdatePreview()
+	app.updateQuitHold(dt)
+	if app.ShouldExit {
+		return
+	}
 
 	if HandleInput(app) {
 		app.ShouldExit = true
 	}
+}
+
+func (app *App) updateQuitHold(dt float32) {
+	target := float32(0.0)
+	if rl.IsKeyDown(rl.KeyEscape) {
+		app.QuitHoldTime += dt
+		target = 1.0
+		if app.QuitHoldTime >= quitHoldDurationSeconds {
+			app.ShouldExit = true
+		}
+	} else {
+		app.QuitHoldTime = 0
+	}
+
+	if dt < 0 {
+		dt = 0
+	}
+	blend := dt * 10.0
+	if blend > 1.0 {
+		blend = 1.0
+	}
+	app.QuitPromptA += (target - app.QuitPromptA) * blend
 }
 
 // Draw renders the current frame.

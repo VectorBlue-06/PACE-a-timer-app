@@ -52,7 +52,7 @@ type KeyBindings struct {
 const (
 	keySpace  int32 = 32
 	keyR      int32 = 82
-	keyF      int32 = 70
+	keyM      int32 = 77
 	keyTab    int32 = 258
 	keyP      int32 = 80
 	keyS      int32 = 83
@@ -66,7 +66,7 @@ func defaultKeyBindings() KeyBindings {
 	return KeyBindings{
 		StartPause:       KeyBinding{Key: keySpace, Name: "SPACE"},
 		Reset:            KeyBinding{Key: keyR, Name: "R"},
-		FullscreenToggle: KeyBinding{Key: keyF, Name: "F"},
+		FullscreenToggle: KeyBinding{Key: keyM, Name: "M"},
 		SettingsToggle:   KeyBinding{Key: keyTab, Name: "TAB"},
 		FadeToggle:       KeyBinding{Key: keySpace, Ctrl: true, Name: "CTRL+SPACE"},
 		PomodoroMode:     KeyBinding{Key: keyP, Name: "P"},
@@ -100,8 +100,13 @@ func LoadConfig() AppConfig {
 	path := configPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		SaveConfig(cfg)
-		return cfg
+		legacyPath := legacyConfigPath()
+		legacyData, legacyErr := os.ReadFile(legacyPath)
+		if legacyErr != nil {
+			SaveConfig(cfg)
+			return cfg
+		}
+		data = legacyData
 	}
 
 	if err := json.Unmarshal(data, &cfg); err != nil {
@@ -109,6 +114,7 @@ func LoadConfig() AppConfig {
 	}
 
 	clampConfig(&cfg)
+	SaveConfig(cfg)
 	return cfg
 }
 
@@ -141,6 +147,12 @@ func clampConfig(cfg *AppConfig) {
 	if cfg.Keys.StartPause.Key == 0 {
 		cfg.Keys = defaultKeyBindings()
 	}
+	if cfg.Keys.FullscreenToggle.Key == 0 {
+		cfg.Keys.FullscreenToggle = defaultKeyBindings().FullscreenToggle
+	}
+	if cfg.Keys.FullscreenToggle.Key == 70 || cfg.Keys.FullscreenToggle.Name == "F" {
+		cfg.Keys.FullscreenToggle = defaultKeyBindings().FullscreenToggle
+	}
 }
 
 func SaveConfig(cfg AppConfig) {
@@ -148,10 +160,25 @@ func SaveConfig(cfg AppConfig) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(configPath(), data, 0644)
+	path := configPath()
+	os.MkdirAll(filepath.Dir(path), 0755)
+	os.WriteFile(path, data, 0644)
 }
 
 func configPath() string {
+	configDir, err := os.UserConfigDir()
+	if err == nil {
+		return filepath.Join(configDir, "PACE", "config.json")
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return "config.json"
+	}
+	return filepath.Join(filepath.Dir(exe), "config.json")
+}
+
+func legacyConfigPath() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return "config.json"

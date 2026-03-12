@@ -17,9 +17,7 @@ func HandleInput(app *App) bool {
 	}
 
 	// Quit
-	if isKeyPressed(keys.Quit) {
-		return true
-	}
+	_ = keys.Quit
 
 	// Settings toggle (TAB)
 	if isKeyPressed(keys.SettingsToggle) {
@@ -69,10 +67,9 @@ func HandleInput(app *App) bool {
 		}
 	}
 
-	// Fullscreen
+	// Minimize window
 	if isKeyPressed(keys.FullscreenToggle) {
-		rl.ToggleBorderlessWindowed()
-		app.ForceClear = true
+		rl.MinimizeWindow()
 	}
 
 	// Pomodoro mode
@@ -110,7 +107,7 @@ func HandleInput(app *App) bool {
 }
 
 func handleSoundMenu(app *App) bool {
-	if rl.IsKeyPressed(rl.KeyEscape) || isKeyPressed(app.Config.Keys.SoundMenu) {
+	if isKeyPressed(app.Config.Keys.SoundMenu) {
 		app.ShowSoundMenu = false
 		return false
 	}
@@ -138,7 +135,7 @@ const settingsItemCount = 11
 
 func handleSettingsInput(app *App) bool {
 	// Close settings
-	if rl.IsKeyPressed(rl.KeyTab) || rl.IsKeyPressed(rl.KeyEscape) {
+	if rl.IsKeyPressed(rl.KeyTab) {
 		app.ShowSettings = false
 		app.UI.ShowSettings(false)
 		app.Sound.StopPreview()

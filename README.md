@@ -5,7 +5,7 @@
 <h1 align="center">PACE</h1>
 
 <p align="center">
-  A minimal, fullscreen productivity timer built for deep focus.
+  A minimal productivity timer built for deep focus.
 </p>
 
 <p align="center">
@@ -21,8 +21,8 @@
 ## Features
 
 - **Single executable** — ~5 MB, no dependencies
-- **Fullscreen** — Borderless window for deep focus
-- **Two modes** — Countdown timer and Pomodoro
+- **Pomodoro-first** — Starts in Pomodoro mode by default
+- **Two modes** — Pomodoro and Countdown timer
 - **Customizable** — Remap keys and load your own alarm sound
 - **Smooth UI** — 60 FPS animations and settings panel
 
@@ -85,11 +85,12 @@ go build -ldflags "-s -w -H windowsgui -extldflags '-static'" -o pace.exe .
 ## How to Use
 
 1. Download and run `pace.exe`
-2. Press **Space** to start the timer
-3. Press **1**, **2**, or **3** to switch between presets (25 min, 50 min, 5 min break)
-4. Press **P** for Pomodoro mode (focus → break → focus cycle)
-5. Press **TAB** to open settings and customize durations, sounds, and keybinds
-6. Press **F** to toggle fullscreen, **ESC** to exit
+2. Timer starts in **Pomodoro mode** by default
+3. Press **Space** to start the timer
+4. Press **1**, **2**, or **3** to switch between countdown presets (25 min, 50 min, 5 min break)
+5. Press **P** to switch to Pomodoro mode (focus → break → focus cycle)
+6. Press **TAB** to open settings and customize durations, sounds, and keybinds
+7. Hold **ESC** for 1 second to quit
 
 > NOTE - Controls may change in future for the ease of use.
 
@@ -97,7 +98,7 @@ go build -ldflags "-s -w -H windowsgui -extldflags '-static'" -o pace.exe .
 
 ## Usage
 
-Run `PACE.exe`. The timer launches in fullscreen.
+Run `PACE.exe`. The app starts in Pomodoro mode.
 
 ### Keyboard Shortcuts
 
@@ -105,7 +106,7 @@ Run `PACE.exe`. The timer launches in fullscreen.
 |---------------|---------------------------------|
 | Space         | Start / Pause / Resume          |
 | R             | Reset timer                     |
-| F             | Toggle fullscreen               |
+| M             | Minimize window                 |
 | TAB           | Open / close settings panel     |
 | Ctrl+Space    | Toggle frame persistence mode   |
 | P             | Pomodoro mode                   |
@@ -113,7 +114,7 @@ Run `PACE.exe`. The timer launches in fullscreen.
 | 1             | 25 minute timer                 |
 | 2             | 50 minute timer                 |
 | 3             | 5 minute break                  |
-| ESC           | Exit                            |
+| Hold ESC (1s) | Quit app                        |
 
 ### Settings Panel (TAB)
 
@@ -123,6 +124,16 @@ Run `PACE.exe`. The timer launches in fullscreen.
 | ← →   | Adjust values     |
 | ENTER | Browse alarm file |
 | TAB   | Close settings    |
+
+### Quit Behavior
+
+- Press and hold **ESC** for 1 second to quit.
+- While ESC is held, a smooth top-left status text (`quiting...`) appears.
+
+### Config Location
+
+- Config is stored in system app data: `%AppData%/PACE/config.json`.
+- On first launch after update, legacy config next to the executable is read and migrated.
 
 ---
 
@@ -148,7 +159,7 @@ do-it/
 ├── dialog_windows.go       # Windows file picker for custom alarm
 ├── build.ps1               # PowerShell build script
 ├── build.bat               # Command Prompt build script
-├── config.json             # Auto-generated user config
+├── (AppData)/PACE/config.json  # Auto-generated user config
 └── docs/
     └── DOCUMENTATION.md    # Full technical documentation
 ```

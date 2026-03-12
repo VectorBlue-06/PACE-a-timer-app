@@ -106,6 +106,7 @@ func (r *Renderer) DrawFrame(app *App) {
 
 	// Layer 7: Keyboard hints (bottom)
 	r.drawStatusHint(app, alpha)
+	r.drawQuitPrompt(app, alpha)
 
 	// Layer 8: Overlays (settings, sound selector) — always on top
 	r.drawSoundSelector(app, alpha)
@@ -316,13 +317,13 @@ func (r *Renderer) drawStatusHint(app *App, alpha float32) {
 		keys := app.Config.Keys
 		switch state {
 		case StateIdle:
-			r.cachedHint = keys.StartPause.Name + " start  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.SettingsToggle.Name + " settings  \u00b7  " + keys.Quit.Name + " quit"
+			r.cachedHint = keys.StartPause.Name + " start  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.SettingsToggle.Name + " settings  \u00b7  hold ESC quit"
 		case StateRunning:
-			r.cachedHint = keys.StartPause.Name + " pause  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.Quit.Name + " quit"
+			r.cachedHint = keys.StartPause.Name + " pause  \u00b7  " + keys.Reset.Name + " reset  \u00b7  hold ESC quit"
 		case StatePaused:
-			r.cachedHint = keys.StartPause.Name + " resume  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.Quit.Name + " quit"
+			r.cachedHint = keys.StartPause.Name + " resume  \u00b7  " + keys.Reset.Name + " reset  \u00b7  hold ESC quit"
 		case StateCompleted:
-			r.cachedHint = keys.StartPause.Name + " continue  \u00b7  " + keys.Reset.Name + " reset  \u00b7  " + keys.Quit.Name + " quit"
+			r.cachedHint = keys.StartPause.Name + " continue  \u00b7  " + keys.Reset.Name + " reset  \u00b7  hold ESC quit"
 		}
 	}
 
@@ -338,6 +339,23 @@ func (r *Renderer) drawStatusHint(app *App, alpha float32) {
 	col := ColorSubtle
 	col.A = uint8(float32(40) * alpha)
 	rl.DrawTextEx(r.fonts.Regular, hint, rl.NewVector2(posX, posY), fontSize, spacing, col)
+}
+
+func (r *Renderer) drawQuitPrompt(app *App, alpha float32) {
+	if app.QuitPromptA <= 0.01 {
+		return
+	}
+
+	fontSize := r.screenH * 0.015 * r.fontScale
+	spacing := fontSize * 0.03
+	text := "quiting..."
+
+	col := ColorPrimary
+	col.A = uint8(float32(col.A) * alpha * app.QuitPromptA * 0.9)
+
+	x := r.screenW * 0.03
+	y := r.screenH * 0.03
+	rl.DrawTextEx(r.fonts.Regular, text, rl.NewVector2(x, y), fontSize, spacing, col)
 }
 
 // drawModeIndicator draws a subtle mode label at the very top.
@@ -405,7 +423,7 @@ func (r *Renderer) drawSoundSelector(app *App, alpha float32) {
 		rl.DrawTextEx(r.fonts.Regular, text, rl.NewVector2(ix, iy), itemSize, spacing, itemCol)
 	}
 
-	hint := "Press 1-3 to select  ·  S or ESC to close"
+	hint := "Press 1-3 to select  ·  S to close"
 	hintSize := r.screenH * 0.015 * r.fontScale
 	hSize := rl.MeasureTextEx(r.fonts.Regular, hint, hintSize, spacing)
 	hx := (r.screenW - hSize.X) / 2

@@ -25,6 +25,9 @@ func HandleInput(app *App) bool {
 	if isKeyPressed(keys.SettingsToggle) {
 		app.ShowSettings = !app.ShowSettings
 		app.UI.ShowSettings(app.ShowSettings)
+		if !app.ShowSettings {
+			app.Sound.StopPreview()
+		}
 		return false
 	}
 
@@ -138,6 +141,7 @@ func handleSettingsInput(app *App) bool {
 	if rl.IsKeyPressed(rl.KeyTab) || rl.IsKeyPressed(rl.KeyEscape) {
 		app.ShowSettings = false
 		app.UI.ShowSettings(false)
+		app.Sound.StopPreview()
 		return false
 	}
 

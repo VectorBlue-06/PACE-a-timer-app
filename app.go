@@ -65,6 +65,7 @@ func (app *App) Update() {
 
 	app.Timer.Update(dt)
 	app.UI.Update(dt, app.Timer.State, app.Config.EnableAnimations)
+	app.Sound.UpdatePreview()
 
 	if HandleInput(app) {
 		app.ShouldExit = true

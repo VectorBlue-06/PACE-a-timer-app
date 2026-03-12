@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -31,8 +32,14 @@ type SoundSystem struct {
 	resumeSound rl.Sound
 	resetSound  rl.Sound
 
+	previewSound  rl.Sound
+	previewActive bool
+	previewUntil  time.Time
+
 	loaded bool
 }
+
+const previewMaxDuration = 10 * time.Second
 
 func NewSoundSystem() *SoundSystem {
 	return &SoundSystem{}
@@ -71,6 +78,8 @@ func (s *SoundSystem) loadEmbeddedSound(name string) rl.Sound {
 
 // LoadCustomAlarm loads an external WAV/MP3 file as the alarm sound.
 func (s *SoundSystem) LoadCustomAlarm(path string) {
+	s.StopPreview()
+
 	if s.customAlarmLoaded {
 		rl.UnloadSound(s.customAlarmSound)
 		s.customAlarmLoaded = false
@@ -85,29 +94,76 @@ func (s *SoundSystem) LoadCustomAlarm(path string) {
 	s.customAlarmLoaded = true
 }
 
+func (s *SoundSystem) selectedAlarmSound(cfg AppConfig) (rl.Sound, bool) {
+	if cfg.SoundFile == "custom" && s.customAlarmLoaded {
+		return s.customAlarmSound, true
+	}
+	switch cfg.SoundFile {
+	case "bell":
+		return s.bellSound, true
+	case "chime":
+		return s.chimeSound, true
+	default:
+		return rl.Sound{}, false
+	}
+}
+
 // PlayAlarm plays the configured alarm sound (timer completion).
 func (s *SoundSystem) PlayAlarm(cfg AppConfig) {
 	if !s.loaded {
 		return
 	}
-	vol := cfg.Volume
-	if cfg.SoundFile == "custom" && s.customAlarmLoaded {
-		rl.SetSoundVolume(s.customAlarmSound, vol)
-		rl.PlaySound(s.customAlarmSound)
+	snd, ok := s.selectedAlarmSound(cfg)
+	if !ok {
 		return
 	}
-	switch cfg.SoundFile {
-	case "bell":
-		rl.SetSoundVolume(s.bellSound, vol)
-		rl.PlaySound(s.bellSound)
-	case "chime":
-		rl.SetSoundVolume(s.chimeSound, vol)
-		rl.PlaySound(s.chimeSound)
-	}
+
+	rl.SetSoundVolume(snd, cfg.Volume)
+	rl.PlaySound(snd)
 }
 
 func (s *SoundSystem) PlayPreview(cfg AppConfig) {
-	s.PlayAlarm(cfg)
+	if !s.loaded {
+		return
+	}
+
+	s.StopPreview()
+
+	snd, ok := s.selectedAlarmSound(cfg)
+	if !ok {
+		return
+	}
+
+	rl.SetSoundVolume(snd, cfg.Volume)
+	rl.PlaySound(snd)
+
+	s.previewSound = snd
+	s.previewActive = true
+	s.previewUntil = time.Now().Add(previewMaxDuration)
+}
+
+func (s *SoundSystem) StopPreview() {
+	if !s.loaded || !s.previewActive {
+		return
+	}
+
+	rl.StopSound(s.previewSound)
+	s.previewActive = false
+}
+
+func (s *SoundSystem) UpdatePreview() {
+	if !s.previewActive {
+		return
+	}
+
+	if !rl.IsSoundPlaying(s.previewSound) {
+		s.previewActive = false
+		return
+	}
+
+	if time.Now().After(s.previewUntil) {
+		s.StopPreview()
+	}
 }
 
 const uiSoundVolume = 0.15
@@ -145,6 +201,8 @@ func (s *SoundSystem) PlayReset() {
 }
 
 func (s *SoundSystem) Close() {
+	s.StopPreview()
+
 	if s.loaded {
 		rl.UnloadSound(s.bellSound)
 		rl.UnloadSound(s.chimeSound)
